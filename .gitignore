@@ -10,6 +10,7 @@ AGENTS.*
 .serena
 .codex
 .claude
+PROJECT_OVERVIEW.md
 
 # Environment and Configuration
 .env
