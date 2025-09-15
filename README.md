@@ -1,115 +1,198 @@
 # a-lm (Alam Language Model)
 
-(Disclaimer: AI-written readme)
+(Disclaimer: AI-written README)
 
-`a-lm` is a from-scratch small language model project that builds a custom tokenizer, efficient Transformer backbone, training pipeline, and inference demo suitable for showcasing on a portfolio. The focus is on understanding every piece – from text preprocessing through alignment and deployment – while keeping the stack lean enough to run on an Apple Silicon laptop.
+> *From-scratch small language model stack, built out of boredom and curiosity 🦭.*
 
-## What gets built
-- Custom byte-fallback tokenizer (BPE + optional unigram) trained on curated English corpora.
-- Decoder-only Transformer with RMSNorm, SwiGLU, RoPE/ALiBi, grouped attention, and a dual FFN router.
-- Data preparation scripts that download, clean, and pack high-quality open datasets (FineWeb-Edu slice, TinyStories, filtered UltraChat, etc.).
-- Training loop for pretraining, supervised fine-tuning, and preference tuning (DPO) with checkpoints and sample generation.
-- Inference runtime featuring constrained decoding, INT8 weight-only quantization, a FastAPI streaming API, and a lightweight chat widget.
+## Table of Contents
+1. [Project Summary](#project-summary)
+2. [Prerequisites](#prerequisites)
+3. [Environment Setup](#environment-setup)
+4. [Essential Commands](#essential-commands)
+5. [Dataset Preparation](#dataset-preparation)
+6. [Tokenizer Training](#tokenizer-training)
+7. [Token Packing](#token-packing)
+8. [Pretraining Loop](#pretraining-loop)
+9. [Sampling From Checkpoints](#sampling-from-checkpoints)
+10. [Repository Layout](#repository-layout)
+11. [Testing & Linting](#testing--linting)
+12. [Troubleshooting](#troubleshooting)
+13. [Next Steps](#next-steps)
 
-## Roadmap snapshot
-Development proceeds milestone by milestone:
-1. **Scaffold & tooling** – package layout, CI, configuration. ✅
-2. **Tokenizer** – byte normalization, BPE/Unigram trainers, CLI + tests. ✅
-3. **Model core** – attention stack, dual FFN gate, Transformer assembly. ✅
-4. **Data pipeline** – dataset download/cleaning, token packing. ⏳
-5. **Pretraining loop** – optimizer, scheduler, gradient checkpointing, logging.
-6. **Alignment** – SFT followed by lightweight DPO.
-7. **Inference & quantization** – INT8 modules, constrained decoding, FastAPI server.
-8. **Evaluation & demo** – lm-eval harness, streaming widget, documentation polish.
+---
 
-Reference configurations live under `configs/`:
-- `configs/corpus.yaml` enumerates dataset sources and cache expectations.
-- `configs/pico.yaml` and `configs/train.yaml` capture the initial model and training hyperparameters for a ~29M parameter “pico” run.
+## Project Summary
+`a-lm` walks through every layer required to build a compact decoder-only transformer: custom tokenizer, curated dataset pipeline, Apple-friendly training loop, weight-only quantization, and a streaming chat demo (coming in later phases). The code prioritizes clarity and reproducibility so you can showcase it on a resume and continue expanding the stack.
 
-Tokenizer and model layers are available today:
-- Train the tokenizer via `python scripts/train_tokenizer.py --input data/corpus/*.txt --vocab-size 32000 --out artifacts/tokenizer.json` (BPE default). A Unigram variant is exposed through `alm.tokenizers.train_unigram` for experiments.
-- Tokenizer modules live in `src/alm/tokenizers/` with coverage in `tests/tokenizers/`.
-- Core Transformer components (RMSNorm, SwiGLU, RoPE/ALiBi, grouped attention, dual FFN, `TransformerModel`) reside in `src/alm/model/` with shape and cache tests in `tests/model/`.
+Highlights:
+- Byte-fallback tokenizer (BPE + optional Unigram) trained on curated corpora.
+- Transformer core with RMSNorm, SwiGLU, RoPE/ALiBi, grouped attention, dual FFN router.
+- Packed dataset format for efficient streaming, simple PyTorch training loop with checkpoint/resume.
+- Sampling CLI to inspect checkpoints mid-training.
 
-### Kick off a pico pretrain run
-After preparing data/tokenizer (see Dataset notes above):
+---
 
-```
-python scripts/train_pretrain.py \
-  --model configs/pico.yaml \
-  --train configs/train.yaml \
-  --data data/packed \
-  --out runs/pico-pretrain \
-  --device auto
-```
+## Prerequisites
+- **Python** 3.11 or newer (use `pyenv`, `asdf`, or system Python).
+- **Apple Silicon** with macOS 13+ recommended (MPS acceleration). CUDA works too.
+- **Hugging Face account** with read token to access FineWeb-Edu and related datasets.
 
-- The script resumes automatically from `runs/pico-pretrain/ckpt-last.pt` if it exists (or pass `--resume path/to/ckpt.pt`).
-- Checkpoints are saved per `checkpoint_interval` and contain both weights and the model config so other scripts can reload them.
-- Adjust hyperparameters by editing `configs/train.yaml` or overriding flags (e.g., change `micro_batch_size`, `max_steps`).
+Optional but helpful:
+- Homebrew packages (`git`, `llvm`, etc.).
+- Adequate disk space for datasets/checkpoints (tens of GBs depending on corpora).
 
-### Sample from a checkpoint
+---
 
-```
-python scripts/sample_text.py \
-  --checkpoint runs/pico-pretrain/ckpt-last.pt \
-  --tokenizer artifacts/tokenizer.json \
-  --prompt "Hello" \
-  --max-tokens 50 \
-  --temperature 0.8 \
-  --top-k 40 \
-  --device auto
-```
-
-`sample_text.py` performs plain greedy/top-k sampling so you can sanity-check generations mid-training or compare checkpoints.
-
-## Dataset notes
-Initial data work focuses on high-quality, permissively licensed corpora. FineWeb-Edu (`https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu`) is the primary web slice; TinyStories and filtered chat datasets supplement it.
-
-### One-time prerequisites
-1. Create (or use) a Hugging Face account.
-2. Generate a read token in your HF account settings.
-3. Log in locally so the `datasets` library can stream private endpoints:
+## Environment Setup
+1. Clone the repository.
+2. Create and activate a virtualenv:
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install --upgrade pip
+   ```
+3. Install project + dev dependencies:
+   ```bash
+   pip install -e .[dev]
+   pre-commit install
+   ```
+4. Log into Hugging Face (once per machine):
    ```bash
    huggingface-cli login
-   # or export HF_TOKEN=... before running the scripts
+   # or export HF_TOKEN=... in your shell/profile
    ```
 
-### Prepare text corpora
+---
+
+## Essential Commands
+| Command | Purpose |
+|---|---|
+| `make dev` | Install dependencies and pre-commit hooks. |
+| `make lint` / `ruff check --fix .` | Lint + autofix using Ruff. |
+| `make test` / `pytest` | Run the test suite. |
+| `ruff format .` | Apply code formatting. |
+| `make check-mps` | Print which device (MPS/CUDA/CPU) PyTorch sees. |
+
+> **Always run:** `ruff check --fix .`, `ruff format .`, and `pytest` before committing changes.
+
+---
+
+## Dataset Preparation
+1. Ensure Hugging Face login is active (`huggingface-cli login`).
+2. Inspect `configs/corpus.yaml`. By default it references:
+   - FineWeb-Edu (quality web text slice)
+   - Wikipedia snapshot (English)
+   - TinyStories (tiny synthetic stories)
+   - UltraChat/OASST (instruction data for later SFT)
+3. Run the prep script to clean and normalize all active sources:
+   ```bash
+   python scripts/prepare_corpus.py \
+     --src configs/corpus.yaml \
+     --out data/clean
+   ```
+   - Output: `data/clean/*.txt` plus metadata JSON for each source.
+   - You can comment out sources in the YAML if you want a smaller initial run.
+
+---
+
+## Tokenizer Training
+4. Train a custom tokenizer (byte fallback BPE):
+   ```bash
+   python scripts/train_tokenizer.py \
+     --input data/clean/*.txt \
+     --vocab-size 32000 \
+     --out artifacts/tokenizer.json
+   ```
+   - Produces `artifacts/tokenizer.json` (merge rules, vocab).
+   - Unigram trainer exposed via `alm.tokenizers.train_unigram` for experimentation.
+
+---
+
+## Token Packing
+5. Pack the cleaned text into fixed-length token shards:
+   ```bash
+   python scripts/pack_dataset.py \
+     --tokenizer artifacts/tokenizer.json \
+     --in data/clean \
+     --out data/packed \
+     --seq-len 512 \
+     --shard-size 2048
+   ```
+   - `data/packed/` now holds `shard_*.bin` (uint32 tokens) and `metadata.json` describing seq length, shard list, and total tokens.
+   - Adjust `--seq-len`/`--shard-size` to suit memory constraints.
+
+---
+
+## Pretraining Loop
+6. Launch a pico-scale pretraining run (auto-detects device). Recommended for sanity-checks:
+   ```bash
+   python scripts/train_pretrain.py \
+     --model configs/pico.yaml \
+     --train configs/train.yaml \
+     --data data/packed \
+     --out runs/pico-pretrain \
+     --device auto
+   ```
+   - Checkpoints saved to `runs/pico-pretrain/` (`ckpt-stepXXXXXX.pt`, `ckpt-last.pt`).
+   - Resume automatically from `--resume path/to/ckpt.pt` or the default `ckpt-last.pt` inside `--out`.
+   - Hyperparameters? Edit `configs/train.yaml` (micro batch size, accum steps, grad clip, max steps, logging interval, checkpoint cadence).
+
+---
+
+## Sampling From Checkpoints
+7. Inspect generated text mid-training:
+   ```bash
+   python scripts/sample_text.py \
+     --checkpoint runs/pico-pretrain/ckpt-last.pt \
+     --tokenizer artifacts/tokenizer.json \
+     --prompt "Hello" \
+     --max-tokens 50 \
+     --temperature 0.8 \
+     --top-k 40 \
+     --device auto
+   ```
+   - Supports top-k + temperature sampling; set `--top-k 0` for greedy decoding.
+   - Swap prompts to gauge knowledge/fluency as training progresses.
+
+---
+
+## Repository Layout
 ```
-# 1) Clean and normalize sources defined in configs/corpus.yaml
-python scripts/prepare_corpus.py \
-  --src configs/corpus.yaml \
-  --out data/clean
-
-# 2) Train (or reuse) the tokenizer
-python scripts/train_tokenizer.py \
-  --input data/clean/*.txt \
-  --vocab-size 32000 \
-  --out artifacts/tokenizer.json
-
-# 3) Pack cleaned text into token shards
-python scripts/pack_dataset.py \
-  --tokenizer artifacts/tokenizer.json \
-  --in data/clean \
-  --out data/packed \
-  --seq-len 512 \
-  --shard-size 2048
+.
+├─ configs/          # YAML configs (corpus sources, model sizes, training hyperparams)
+├─ scripts/          # CLI entrypoints (tokenizer, corpus prep, packing, training, sampling)
+├─ src/alm/          # Library code: tokenizers, model, data, utils, etc.
+├─ tests/            # Pytest suites (tokenizer/model/data/training)
+├─ data/             # Generated cleaned corpora & packed shards (ignored)
+├─ artifacts/        # Tokenizer artifacts, future checkpoints (ignored)
+├─ runs/             # Training outputs (ignored)
+├─ AGENTS.MD         # Agent playbook
+├─ TODO_LIST.md      # Milestone tracker
+└─ README.md         # You are here
 ```
 
-Resulting directories:
-- `data/clean/` – normalized `.txt` files + source metadata.
-- `artifacts/tokenizer.json` – tokenizer vocab produced by step (2).
-- `data/packed/` – contiguous `.bin` shards + `metadata.json` describing sequence length, shard count, and total tokens.
+---
 
-When you want to try a different dataset (e.g., your own export), create a new entry in `configs/corpus.yaml`, rerun the commands above, and point future training runs at the freshly packed directory.
+## Testing & Linting
+- Run locally before committing or pushing:
+  ```bash
+  ruff check --fix .
+  ruff format .
+  pytest
+  ```
+- CI (GitHub Actions) re-runs the same commands; keep them green by testing locally first.
 
-## Current status
-Planning and foundational code are in place. Tokenizer tooling and the Transformer backbone are implemented with tests; the next milestone will deliver data preparation scripts and sharded token packs so pretraining can begin.
+---
 
-## Contributing / running along
-- Target hardware: Apple Silicon (M2) with PyTorch MPS acceleration; CPU fallbacks remain supported for collaborators.
-- `Makefile` targets (`make dev`, `make lint`, `make test`, `make check-mps`) streamline setup.
-- Keep `TODO_LIST.md` up to date as you progress through milestones; CI (`.github/workflows/ci.yml`) runs lint + tests on pushes and pull requests.
-- Never commit secrets – dataset credentials and tokens belong in a local `.env` (ignored by git).
+## Troubleshooting
+- **Hugging Face auth errors:** re-run `huggingface-cli login`, ensure the token has read access.
+- **OOM during training:** lower `micro_batch_size`, increase `gradient_accumulation`, or reduce `--seq-len` when packing.
+- **Slow/broken run:** verify `pip install -e .[dev]` succeeded, run `make check-mps` to confirm device.
+- **Restart training:** delete or move `ckpt-last.pt` if you want a fresh start; otherwise training resumes automatically.
 
-The README will expand with setup instructions, dataset steps, and evaluation results as each milestone lands.
+---
+
+## Next Steps
+- Phase 5 (coming soon): supervised fine-tuning on chat data + DPO alignment.
+- Phase 6+: inference server (FastAPI), weight-only INT8 quantization, web chat widget.
+- Keep `TODO_LIST.md` updated as milestones close; expand this README when new CLIs/configs appear.
