@@ -20,10 +20,7 @@ test:
 	pytest
 
 check-mps:
-	$(PYTHON) - <<'PY'
-import torch
-print(f"MPS available: {torch.backends.mps.is_available() if hasattr(torch.backends, 'mps') else False}")
-PY
+	$(PYTHON) -m amlm.utils.device
 
 train-pico:
 	@echo "Training scripts not yet implemented. See TODO_LIST.md for roadmap."

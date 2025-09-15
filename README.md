@@ -16,6 +16,10 @@ Work follows the milestone ladder in `PROJECT_OVERVIEW.md`:
 2. **M1 Tokenizer → M8 Demo:** tokenizer, model core, data pipeline, training, alignment, inference, evaluation.
 3. Optional stretch items (Core ML/GGUF export, speculative decoding, RAG) come after the MVP chat loop works.
 
+Reference configurations now live under `configs/`:
+- `configs/corpus.yaml` documents curated dataset sources and caching expectations.
+- `configs/pico.yaml` and `configs/train.yaml` capture the initial model + training hyperparameters for the pico run.
+
 Progress and open questions live in `TODO_LIST.md`. Implementation practices, commands, and repo conventions are in `AGENTS.MD`.
 
 ## Current status

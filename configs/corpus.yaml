@@ -1,0 +1,46 @@
+# data sources used in Phase 3 scripts; values match public datasets with permissive licenses
+sources:
+  fineweb_edu:
+    kind: huggingface
+    dataset: HuggingFaceFW/fineweb-edu
+    split: train
+    streaming: true
+    sample_tokens: 2000000
+    notes: "Educational slice of FineWeb; high quality web text."
+  wikipedia_en:
+    kind: huggingface
+    dataset: wikipedia
+    config: 20231101.en
+    split: train
+    streaming: true
+    sample_articles: 500000
+    notes: "Dump curated via HF; filter to remove tables/code in prepare_corpus.py."
+  tinystories:
+    kind: huggingface
+    dataset: roneneldan/TinyStories
+    split: train
+    streaming: false
+    notes: "TinyStories pairs used for early convergence sanity checks."
+
+sft:
+  ultrachat:
+    kind: huggingface
+    dataset: HuggingFaceH4/ultrachat_200k
+    split: train
+    streaming: false
+    notes: "Apply filtering script to drop low quality turns."
+  oasst1:
+    kind: huggingface
+    dataset: OpenAssistant/oasst1
+    split: train
+    streaming: false
+    notes: "Use official conversation tree; flatten via scripts."
+
+prefs:
+  manual_pairs:
+    kind: local
+    path: data/prefs/paired.jsonl
+    notes: "Engineer in-house preference pairs for DPO."
+
+cache:
+  base_dir: "${AML_DATA_DIR:-data/cache}"
