@@ -5,7 +5,7 @@ sources:
     dataset: HuggingFaceFW/fineweb-edu
     split: train
     streaming: true
-    sample_tokens: 200000
+    sample_tokens: 2000000
     notes: "Educational slice of FineWeb; high quality web text."
   # wikipedia_en:
   #   kind: huggingface
