@@ -11,6 +11,7 @@ AGENTS.*
 .codex
 .claude
 PROJECT_OVERVIEW.md
+TODO*.md
 
 # Environment and Configuration
 .env
