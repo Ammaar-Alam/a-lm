@@ -1,7 +1,7 @@
 import torch
 
-from amlm.model.config import DualFFNConfig, ModelConfig
-from amlm.model.transformer import TransformerModel
+from a-lm.model.config import DualFFNConfig, ModelConfig
+from a-lm.model.transformer import TransformerModel
 
 
 def sample_config() -> ModelConfig:

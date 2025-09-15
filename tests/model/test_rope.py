@@ -1,6 +1,6 @@
 import torch
 
-from amlm.model import apply_rope, rope_angles
+from a-lm.model import apply_rope, rope_angles
 
 
 def test_rope_shapes() -> None:

@@ -1,4 +1,4 @@
-from amlm import __version__
+from a-lm import __version__
 
 def test_version() -> None:
     assert __version__ == "0.1.0"

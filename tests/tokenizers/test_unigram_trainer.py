@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from amlm.tokenizers import train_unigram
+from a-lm.tokenizers import train_unigram
 
 
 def test_unigram_trainer_builds_vocab(tmp_path: Path) -> None:

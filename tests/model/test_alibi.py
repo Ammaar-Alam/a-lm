@@ -1,6 +1,6 @@
 import torch
 
-from amlm.model import build_alibi_bias, get_slopes
+from a-lm.model import build_alibi_bias, get_slopes
 
 
 def test_get_slopes_count() -> None:

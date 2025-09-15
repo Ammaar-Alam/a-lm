@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from amlm.tokenizers import cli_train_tokenizer
+from a-lm.tokenizers import cli_train_tokenizer
 
 
 def parse_args() -> argparse.Namespace:

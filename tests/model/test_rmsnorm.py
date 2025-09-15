@@ -1,6 +1,6 @@
 import torch
 
-from amlm.model import RMSNorm
+from a-lm.model import RMSNorm
 
 
 def test_rmsnorm_shapes() -> None:

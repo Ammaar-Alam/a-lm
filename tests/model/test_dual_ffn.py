@@ -1,6 +1,6 @@
 import torch
 
-from amlm.model.dual_ffn import DualFFN
+from a-lm.model.dual_ffn import DualFFN
 
 
 def test_dual_ffn_routes_tokens() -> None:
