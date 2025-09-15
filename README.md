@@ -20,6 +20,11 @@ Reference configurations now live under `configs/`:
 - `configs/corpus.yaml` documents curated dataset sources and caching expectations.
 - `configs/pico.yaml` and `configs/train.yaml` capture the initial model + training hyperparameters for the pico run.
 
+Tokenizer work has begun:
+- Train via `python scripts/train_tokenizer.py --input data/corpus/*.txt --vocab-size 32000 --out artifacts/tokenizer.json` (BPE default).
+- Unigram variant available via `amlm.tokenizers.train_unigram` for experimentation.
+- Tokenizer modules live in `src/amlm/tokenizers/` with pytest coverage in `tests/tokenizers/`.
+
 Progress and open questions live in `TODO_LIST.md`. Implementation practices, commands, and repo conventions are in `AGENTS.MD`.
 
 ## Current status
