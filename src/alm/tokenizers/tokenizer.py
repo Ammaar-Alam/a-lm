@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .bpe_trainer import load_vocab
 from .normalizer import normalize_text
 from .vocab import Vocabulary
-from .bpe_trainer import load_vocab
 
 
 class Tokenizer:

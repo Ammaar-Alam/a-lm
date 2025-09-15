@@ -9,9 +9,9 @@ import torch
 
 def get_slopes(n_heads: int) -> torch.Tensor:
     def get_power_of_2_slopes(power: int) -> torch.Tensor:
-        start = 2 ** (-2 ** -(math.log2(power) - 3))
+        start = 2 ** (-(2 ** -(math.log2(power) - 3)))
         ratio = start
-        return torch.tensor([start * ratio ** i for i in range(power)], dtype=torch.float32)
+        return torch.tensor([start * ratio**i for i in range(power)], dtype=torch.float32)
 
     if math.log2(n_heads).is_integer():
         slopes = get_power_of_2_slopes(n_heads)

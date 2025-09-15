@@ -3,7 +3,8 @@
 from .bpe_trainer import cli_train_tokenizer, load_vocab, save_vocab, train_bpe
 from .normalizer import iter_bytes, normalize_text
 from .tokenizer import Tokenizer
-from .unigram_trainer import cli_train as cli_train_unigram, train_unigram
+from .unigram_trainer import cli_train as cli_train_unigram
+from .unigram_trainer import train_unigram
 from .vocab import Vocabulary
 
 __all__ = [

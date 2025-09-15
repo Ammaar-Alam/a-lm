@@ -6,7 +6,7 @@ import unicodedata
 from dataclasses import dataclass
 
 WHITESPACE_REPLACEMENTS = {
-    "\u00A0": " ",  # non-breaking space
+    "\u00a0": " ",  # non-breaking space
     "\u1680": " ",
     "\u2000": " ",
     "\u2001": " ",
@@ -18,9 +18,9 @@ WHITESPACE_REPLACEMENTS = {
     "\u2007": " ",
     "\u2008": " ",
     "\u2009": " ",
-    "\u200A": " ",
-    "\u202F": " ",
-    "\u205F": " ",
+    "\u200a": " ",
+    "\u202f": " ",
+    "\u205f": " ",
     "\u3000": " ",
 }
 

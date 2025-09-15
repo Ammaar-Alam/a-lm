@@ -2,7 +2,7 @@ from alm.tokenizers.normalizer import iter_bytes, normalize_text
 
 
 def test_normalize_whitespace_and_control_chars() -> None:
-    raw = "Hello\u00A0World\r\nTab\tControl\x07"
+    raw = "Hello\u00a0World\r\nTab\tControl\x07"
     normalized = normalize_text(raw)
     assert normalized == "Hello World\nTab\tControl"
 

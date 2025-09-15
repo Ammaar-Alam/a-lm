@@ -11,9 +11,7 @@ def test_detect_device_without_torch(monkeypatch) -> None:
 
 
 def test_detect_device_prefers_mps(monkeypatch) -> None:
-    fake_backends = SimpleNamespace(
-        mps=SimpleNamespace(is_available=lambda: True)
-    )
+    fake_backends = SimpleNamespace(mps=SimpleNamespace(is_available=lambda: True))
     fake_cuda = SimpleNamespace(is_available=lambda: False, current_device=lambda: 0)
     fake_torch = SimpleNamespace(backends=fake_backends, cuda=fake_cuda)
     monkeypatch.setattr(device, "torch", fake_torch)

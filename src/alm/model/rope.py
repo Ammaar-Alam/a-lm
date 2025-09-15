@@ -29,7 +29,7 @@ def rope_angles(
 
 
 def apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.Tensor:
-    while cos.ndim < x.ndim:
-        cos = cos.unsqueeze(1)
-        sin = sin.unsqueeze(1)
+    for _ in range(x.ndim - cos.ndim):
+        cos = cos.unsqueeze(0)
+        sin = sin.unsqueeze(0)
     return (x * cos) + (rotate_half(x) * sin)

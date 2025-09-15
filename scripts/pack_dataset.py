@@ -13,10 +13,14 @@ from alm.tokenizers import Tokenizer
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Pack text files into token shards")
     parser.add_argument("--tokenizer", required=True, help="Path to tokenizer JSON")
-    parser.add_argument("--in", dest="input_dir", required=True, help="Directory with cleaned text files")
+    parser.add_argument(
+        "--in", dest="input_dir", required=True, help="Directory with cleaned text files"
+    )
     parser.add_argument("--out", required=True, help="Directory for binary shards")
     parser.add_argument("--seq-len", type=int, default=512, help="Sequence length for packing")
-    parser.add_argument("--shard-size", type=int, default=2048, help="Number of tokens per shard chunk")
+    parser.add_argument(
+        "--shard-size", type=int, default=2048, help="Number of tokens per shard chunk"
+    )
     parser.add_argument("--eos", default="\n", help="EoS string appended between documents")
     return parser.parse_args()
 
