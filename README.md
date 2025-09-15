@@ -1,7 +1,6 @@
 # a-lm (Alam Language Model)
-(AI-assisted readme)
 
-`a-lm` is a from-scratch small language model project; this was made just for fun/curiosity :). The end goal is to train a compact decoder-only Transformer on curated open datasets, align it for chat use, and ship a streaming FastAPI endpoint plus a lightweight web widget you can embed in a portfolio.
+`a-lm` is a from-scratch small language model project that turns the blueprint in `PROJECT_OVERVIEW.md` into a working, resume-ready system. The end goal is to train a compact decoder-only Transformer on curated open datasets, align it for chat use, and ship a streaming FastAPI endpoint plus a lightweight web widget you can embed in a portfolio.
 
 ## What gets built
 - Custom byte-fallback tokenizer (BPE + optional unigram) trained on a curated English corpus for readable output.
@@ -25,7 +24,17 @@ Tokenizer work has begun:
 - Unigram variant available via `amlm.tokenizers.train_unigram` for experimentation.
 - Tokenizer modules live in `src/amlm/tokenizers/` with pytest coverage in `tests/tokenizers/`.
 
-Progress and open questions live in `TODO_LIST.md`. Implementation practices, commands, and repo conventions are in `AGENTS.MD`.
+Model core primitives are implemented under `src/amlm/model/`:
+- RMSNorm, SwiGLU, RoPE/ALiBi utilities with unit tests in `tests/model/`.
+- `attention.py` provides grouped/multi-query attention with KV-cache support.
+- `dual_ffn.py` implements the lite/expert gate with routing stats; `transformer.py` wires layers and configuration (`config.py`).
 
 ## Current status
-Planning stage. No code scaffold yet—first milestones will establish the Python package, tooling, and dataset acquisition flow before moving into tokenizer/model implementation.
+Planning + core scaffolding complete. Tokenizer and base Transformer components are implemented with tests; next phases add data prep, training loops, alignment, and serving.
+
+## Contributing / running along
+- Primary development target: Apple Silicon (M2) using PyTorch MPS; CPU-only fallbacks will be maintained so others can clone and experiment.
+- Community contributors will be able to reproduce training locally by following the forthcoming `Makefile` and `scripts/` commands documented in the README.
+- For questions about datasets or optional features, see the “Outstanding Questions” section in `TODO_LIST.md`.
+
+This README will expand as phases complete (setup instructions, commands, evaluation results). For the full technical blueprint, read `PROJECT_OVERVIEW.md`.
