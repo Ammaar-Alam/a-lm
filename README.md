@@ -1,4 +1,4 @@
-# alm (Alam Language Model)
+# a-lm (Alam Language Model)
 
 (Disclaimer: AI-written readme)
 

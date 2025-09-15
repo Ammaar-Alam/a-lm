@@ -11,7 +11,7 @@ from alm.data.prepare import prepare_all
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Prepare text corpora for alm")
+    parser = argparse.ArgumentParser(description="Prepare text corpora for a-lm")
     parser.add_argument("--src", required=True, help="Path to corpus YAML config")
     parser.add_argument("--out", required=True, help="Directory to write cleaned text")
     return parser.parse_args()

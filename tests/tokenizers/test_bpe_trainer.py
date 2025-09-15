@@ -1,6 +1,5 @@
-from pathlib import Path
-
 import json
+from pathlib import Path
 
 from alm.tokenizers import bpe_trainer
 
