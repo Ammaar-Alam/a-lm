@@ -7,20 +7,20 @@ sources:
     streaming: true
     sample_tokens: 2000000
     notes: "Educational slice of FineWeb; high quality web text."
-  # wikipedia_en:
-  #   kind: huggingface
-  #   dataset: wikimedia/wikipedia
-  #   config: 20231101.en
-  #   split: train
-  #   streaming: true
-  #   sample_articles: 500000
-  #   notes: "Dump curated via HF; filter to remove tables/code in prepare_corpus.py."
-  # tinystories:
-  #   kind: huggingface
-  #   dataset: roneneldan/TinyStories
-  #   split: train
-  #   streaming: false
-  #   notes: "TinyStories pairs used for early convergence sanity checks."
+  wikipedia_en:
+    kind: huggingface
+    dataset: wikimedia/wikipedia
+    config: 20231101.en
+    split: train
+    streaming: true
+    sample_articles: 500000
+    notes: "Dump curated via HF; filter to remove tables/code in prepare_corpus.py."
+  tinystories:
+    kind: huggingface
+    dataset: roneneldan/TinyStories
+    split: train
+    streaming: false
+    notes: "TinyStories pairs used for early convergence sanity checks."
 
 sft:
   ultrachat:
