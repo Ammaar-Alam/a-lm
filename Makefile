@@ -20,7 +20,7 @@ test:
 	pytest
 
 check-mps:
-	$(PYTHON) -m a-lm.utils.device
+	$(PYTHON) -m alm.utils.device
 
 train-pico:
 	@echo "Training scripts not yet implemented. See TODO_LIST.md for roadmap."

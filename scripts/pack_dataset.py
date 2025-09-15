@@ -6,8 +6,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from amlm.data.pack import iter_text_files, pack_tokens
-from amlm.tokenizers import Tokenizer
+from alm.data.pack import iter_text_files, pack_tokens
+from alm.tokenizers import Tokenizer
 
 
 def parse_args() -> argparse.Namespace:

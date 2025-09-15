@@ -4,29 +4,29 @@ from __future__ import annotations
 
 import collections
 import json
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
 
 from .normalizer import normalize_text
 from .vocab import Vocabulary
 
-Pair = Tuple[str, str]
+Pair = tuple[str, str]
 
 
-def get_stats(tokens: Iterable[List[str]]) -> Dict[Pair, int]:
-    stats: Dict[Pair, int] = collections.Counter()
+def get_stats(tokens: Iterable[list[str]]) -> dict[Pair, int]:
+    stats: dict[Pair, int] = collections.Counter()
     for token_list in tokens:
         for pair in zip(token_list, token_list[1:]):
             stats[pair] += 1
     return dict(stats)
 
 
-def merge_vocab(tokens: Iterable[List[str]], pair: Pair) -> List[List[str]]:
+def merge_vocab(tokens: Iterable[list[str]], pair: Pair) -> list[list[str]]:
     first, second = pair
-    merged: List[List[str]] = []
+    merged: list[list[str]] = []
     bigram = first + second
     for token_list in tokens:
-        new_list: List[str] = []
+        new_list: list[str] = []
         i = 0
         while i < len(token_list):
             if i < len(token_list) - 1 and token_list[i] == first and token_list[i + 1] == second:
@@ -68,7 +68,7 @@ def load_vocab(path: Path) -> Vocabulary:
     return vocab
 
 
-def train_from_files(files: List[Path], vocab_size: int) -> Vocabulary:
+def train_from_files(files: list[Path], vocab_size: int) -> Vocabulary:
     def iter_corpus() -> Iterable[str]:
         for file in files:
             yield from Path(file).read_text(encoding="utf-8").splitlines()
@@ -76,18 +76,7 @@ def train_from_files(files: List[Path], vocab_size: int) -> Vocabulary:
     return train_bpe(iter_corpus(), vocab_size)
 
 
-def cli_train_tokenizer(input_paths: List[str], vocab_size: int, output_path: str) -> None:
+def cli_train_tokenizer(input_paths: list[str], vocab_size: int, output_path: str) -> None:
     files = [Path(p) for p in input_paths]
     vocab = train_from_files(files, vocab_size)
     save_vocab(vocab, Path(output_path))
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Train a byte fallback BPE tokenizer.")
-    parser.add_argument("--input", nargs="+", help="Input text files")
-    parser.add_argument("--vocab-size", type=int, default=32000)
-    parser.add_argument("--out", required=True, help="Output tokenizer JSON path")
-    args = parser.parse_args()
-    cli_train_tokenizer(args.input, args.vocab_size, args.out)

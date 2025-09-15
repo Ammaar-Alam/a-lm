@@ -1,4 +1,4 @@
-"""Modules composing the a-lm transformer."""
+"""Modules composing the alm transformer."""
 
 from .alibi import build_alibi_bias, get_slopes
 from .attention import MultiHeadAttention

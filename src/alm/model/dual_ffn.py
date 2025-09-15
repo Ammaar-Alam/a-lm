@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Optional, Tuple
 
 import torch
 from torch import nn
@@ -38,7 +37,7 @@ class DualFFN(nn.Module):
         self.ffn_small = SwiGLU(dim, hidden_small)
         self.ffn_large = SwiGLU(dim, hidden_large)
 
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, RouterStats]:
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, RouterStats]:
         bsz, seq_len, dim = x.shape
         tokens = bsz * seq_len
         flat = x.reshape(tokens, dim)

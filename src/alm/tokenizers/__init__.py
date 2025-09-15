@@ -1,4 +1,4 @@
-"""Tokenization utilities for a-lm."""
+"""Tokenization utilities for alm."""
 
 from .bpe_trainer import cli_train_tokenizer, load_vocab, save_vocab, train_bpe
 from .normalizer import iter_bytes, normalize_text

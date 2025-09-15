@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List
 
 from .normalizer import normalize_text
 from .vocab import Vocabulary
@@ -13,10 +12,9 @@ from .bpe_trainer import load_vocab
 class Tokenizer:
     def __init__(self, vocab: Vocabulary) -> None:
         self.vocab = vocab
-        # Greedy longest-match decode order
         self._sorted_tokens = sorted(
             self.vocab.id_to_token,
-            key=lambda tok: len(tok),
+            key=len,
             reverse=True,
         )
 
@@ -24,9 +22,9 @@ class Tokenizer:
     def vocab_size(self) -> int:
         return len(self.vocab)
 
-    def encode(self, text: str) -> List[int]:
+    def encode(self, text: str) -> list[int]:
         normalized = normalize_text(text)
-        ids: List[int] = []
+        ids: list[int] = []
         i = 0
         length = len(normalized)
         while i < length:
@@ -35,16 +33,16 @@ class Tokenizer:
                 if normalized.startswith(token, i):
                     match = token
                     break
-            if match is None or match == "":
+            if not match:
                 match = normalized[i]
             ids.append(self.vocab.encode(match))
             i += len(match)
         return ids
 
-    def decode(self, ids: List[int]) -> str:
+    def decode(self, ids: list[int]) -> str:
         return "".join(self.vocab.decode(i) for i in ids)
 
     @classmethod
-    def from_file(cls, path: Path) -> "Tokenizer":
+    def from_file(cls, path: Path) -> Tokenizer:
         vocab = load_vocab(path)
         return cls(vocab)

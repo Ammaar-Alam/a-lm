@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from a-lm.tokenizers import Tokenizer, Vocabulary, save_vocab
+from alm.tokenizers import Tokenizer, Vocabulary, save_vocab
 
 
 def test_tokenizer_round_trip(tmp_path: Path) -> None:

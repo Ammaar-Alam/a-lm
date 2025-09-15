@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import math
-from typing import Optional, Tuple
 
 import torch
 from torch import nn
 
 from .rope import apply_rope
 
-KeyValueCache = Tuple[torch.Tensor, torch.Tensor]
+KeyValueCache = tuple[torch.Tensor, torch.Tensor]
 
 
 def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
@@ -40,13 +39,13 @@ class MultiHeadAttention(nn.Module):
     def forward(
         self,
         hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_cos: Optional[torch.Tensor] = None,
-        position_sin: Optional[torch.Tensor] = None,
-        alibi_bias: Optional[torch.Tensor] = None,
-        past_key_value: Optional[KeyValueCache] = None,
+        attention_mask: torch.Tensor | None = None,
+        position_cos: torch.Tensor | None = None,
+        position_sin: torch.Tensor | None = None,
+        alibi_bias: torch.Tensor | None = None,
+        past_key_value: KeyValueCache | None = None,
         use_cache: bool = False,
-    ) -> Tuple[torch.Tensor, Optional[KeyValueCache]]:
+    ) -> tuple[torch.Tensor, KeyValueCache | None]:
         bsz, seq_len, _ = hidden_states.shape
 
         q = self.q_proj(hidden_states)
@@ -66,7 +65,7 @@ class MultiHeadAttention(nn.Module):
             k = torch.cat([past_k, k], dim=2)
             v = torch.cat([past_v, v], dim=2)
 
-        present: Optional[KeyValueCache] = None
+        present: KeyValueCache | None = None
         if use_cache:
             present = (k, v)
 

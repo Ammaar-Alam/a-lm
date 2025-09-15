@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-from typing import Optional
 
 import torch
 from torch import nn
@@ -16,7 +15,7 @@ class RMSNorm(nn.Module):
         super().__init__()
         self.eps = eps
         self.weight = nn.Parameter(torch.ones(dim))
-        self.bias: Optional[nn.Parameter]
+        self.bias: nn.Parameter | None
         if bias:
             self.bias = nn.Parameter(torch.zeros(dim))
         else:

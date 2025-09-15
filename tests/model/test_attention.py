@@ -1,6 +1,6 @@
 import torch
 
-from a-lm.model.attention import MultiHeadAttention, repeat_kv
+from alm.model.attention import MultiHeadAttention, repeat_kv
 
 
 def test_repeat_kv() -> None:

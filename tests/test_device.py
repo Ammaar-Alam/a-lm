@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-import a-lm.utils.device as device
+import alm.utils.device as device
 
 
 def test_detect_device_without_torch(monkeypatch) -> None:

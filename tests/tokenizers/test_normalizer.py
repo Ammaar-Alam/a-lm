@@ -1,4 +1,4 @@
-from a-lm.tokenizers.normalizer import iter_bytes, normalize_text
+from alm.tokenizers.normalizer import iter_bytes, normalize_text
 
 
 def test_normalize_whitespace_and_control_chars() -> None:

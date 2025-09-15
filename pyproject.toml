@@ -72,7 +72,7 @@ pythonpath = ["src"]
 testpaths = ["tests"]
 
 [tool.coverage.run]
-source = ["a-lm"]
+source = ["alm"]
 branch = true
 
 [tool.coverage.report]

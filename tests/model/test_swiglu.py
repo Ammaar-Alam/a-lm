@@ -1,6 +1,6 @@
 import torch
 
-from a-lm.model import SwiGLU
+from alm.model import SwiGLU
 
 
 def test_swiglu_forward() -> None:

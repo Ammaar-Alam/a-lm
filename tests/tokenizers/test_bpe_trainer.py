@@ -2,7 +2,7 @@ from pathlib import Path
 
 import json
 
-from a-lm.tokenizers import bpe_trainer
+from alm.tokenizers import bpe_trainer
 
 
 def test_bpe_training_round_trip(tmp_path: Path) -> None:

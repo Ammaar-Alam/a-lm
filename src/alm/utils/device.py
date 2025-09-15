@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional
 
 try:
     import torch
@@ -16,7 +15,7 @@ class DeviceInfo:
     """Runtime view of the chosen compute device."""
 
     type: str
-    index: Optional[int] = None
+    index: int | None = None
 
     def as_torch_device(self) -> str:
         if self.index is None:

@@ -1,4 +1,4 @@
-# a-lm (Alam Language Model)
+# alm (Alam Language Model)
 
 (Disclaimer: AI-written readme)
 
@@ -27,9 +27,9 @@ Reference configurations live under `configs/`:
 - `configs/pico.yaml` and `configs/train.yaml` capture the initial model and training hyperparameters for a ~29M parameter “pico” run.
 
 Tokenizer and model layers are available today:
-- Train the tokenizer via `python scripts/train_tokenizer.py --input data/corpus/*.txt --vocab-size 32000 --out artifacts/tokenizer.json` (BPE default). A Unigram variant is exposed through `a-lm.tokenizers.train_unigram` for experiments.
-- Tokenizer modules live in `src/a-lm/tokenizers/` with coverage in `tests/tokenizers/`.
-- Core Transformer components (RMSNorm, SwiGLU, RoPE/ALiBi, grouped attention, dual FFN, `TransformerModel`) reside in `src/a-lm/model/` with shape and cache tests in `tests/model/`.
+- Train the tokenizer via `python scripts/train_tokenizer.py --input data/corpus/*.txt --vocab-size 32000 --out artifacts/tokenizer.json` (BPE default). A Unigram variant is exposed through `alm.tokenizers.train_unigram` for experiments.
+- Tokenizer modules live in `src/alm/tokenizers/` with coverage in `tests/tokenizers/`.
+- Core Transformer components (RMSNorm, SwiGLU, RoPE/ALiBi, grouped attention, dual FFN, `TransformerModel`) reside in `src/alm/model/` with shape and cache tests in `tests/model/`.
 
 ## Dataset notes
 Initial data work focuses on high-quality, permissively licensed corpora. FineWeb-Edu (`https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu`) is the primary web slice; TinyStories and filtered chat datasets supplement it. Upcoming scripts will automate downloads via the Hugging Face `datasets` library (you’ll need a Hugging Face account/token) and emit cleaned text under `data/clean/` before packing into contiguous token shards.

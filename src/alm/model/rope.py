@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
-
 import torch
 
 
@@ -16,9 +14,9 @@ def rope_angles(
     seq_len: int,
     dim: int,
     theta: float = 10000.0,
-    base: Optional[float] = None,
+    base: float | None = None,
     offset: int = 0,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     if base is None:
         base = theta
     assert dim % 2 == 0, "RoPE dimension must be even"
