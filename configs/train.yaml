@@ -8,22 +8,25 @@ optim:
 
 scheduler:
   name: cosine
-  warmup_steps: 1000
-  max_steps: 100000
+  warmup_steps: 50
+  max_steps: 2000
 
 training:
-  micro_batch_size: 8
+  micro_batch_size: 2
   global_batch_size: 128
   seq_len: 512
   eval_interval: 500
-  checkpoint_interval: 2000
+  checkpoint_interval: 100
   gradient_clip_norm: 1.0
-  gradient_accumulation: 16
+  gradient_accumulation: 1
   mixed_precision: fp16
   grad_checkpointing: true
   seed: 1337
+  max_steps: 2000
+  dataloader_workers: 2
 
 logging:
-  log_interval: 100
+  log_interval: 1
   sample_interval: 2000
   output_dir: runs/pico-pretrain
+  rich_progress: true

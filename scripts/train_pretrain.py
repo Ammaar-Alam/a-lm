@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import math
+import time
 from contextlib import nullcontext
 from itertools import cycle
 from pathlib import Path
@@ -19,6 +20,20 @@ from torch.utils.data import DataLoader
 from alm.data.dataset import PackedDataset, collate_tokens
 from alm.model.config import DualFFNConfig, ModelConfig
 from alm.model.transformer import TransformerModel
+
+try:
+    from rich.console import Console
+    from rich.progress import (
+        BarColumn,
+        Progress,
+        TaskProgressColumn,
+        TextColumn,
+        TimeElapsedColumn,
+        TimeRemainingColumn,
+    )
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    Console = None
+    Progress = None
 
 
 def resolve_device(name: str | None) -> torch.device:
@@ -87,10 +102,11 @@ def build_optimizer(model: nn.Module, cfg: dict[str, Any]) -> torch.optim.Optimi
 
 
 def build_scheduler(
-    optimizer: torch.optim.Optimizer, cfg: dict[str, Any]
+    optimizer: torch.optim.Optimizer, cfg: dict[str, Any], total_steps: int
 ) -> torch.optim.lr_scheduler.LambdaLR:
-    warmup_steps = cfg.get("warmup_steps", 0)
-    max_steps = max(cfg.get("max_steps", 1), 1)
+    warmup_steps = int(cfg.get("warmup_steps", 0))
+    cfg_max_steps = int(cfg.get("max_steps", total_steps))
+    max_steps = max(cfg_max_steps, total_steps, 1)
 
     def lr_lambda(step: int) -> float:
         step = min(step, max_steps)
@@ -157,21 +173,28 @@ def train(args: argparse.Namespace) -> None:
     max_steps = int(training_cfg.get("max_steps", 1000))
     grad_clip = float(training_cfg.get("gradient_clip_norm", 1.0))
 
+    device = resolve_device(args.device)
+
+    num_workers = int(training_cfg.get("dataloader_workers", 0))
     dataloader = DataLoader(
         dataset,
         batch_size=micro_batch_size,
         shuffle=True,
         drop_last=True,
         collate_fn=collate_tokens,
+        num_workers=num_workers,
+        persistent_workers=num_workers > 0,
+        pin_memory=device.type == "cuda",
     )
     data_iter = cycle(dataloader)
 
-    device = resolve_device(args.device)
     torch.set_float32_matmul_precision("high")
 
     model = TransformerModel(model_config).to(device)
     optimizer = build_optimizer(model, train_config.get("optim", {}))
-    scheduler = build_scheduler(optimizer, train_config.get("scheduler", {}))
+    scheduler = build_scheduler(
+        optimizer, train_config.get("scheduler", {}), max_steps
+    )
 
     scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")
     autocast_ctx = (
@@ -186,6 +209,13 @@ def train(args: argparse.Namespace) -> None:
     log_cfg = train_config.get("logging", {})
     log_interval = int(log_cfg.get("log_interval", 100))
     ckpt_interval = int(training_cfg.get("checkpoint_interval", 500))
+    use_rich = bool(log_cfg.get("rich_progress", True) and Progress and Console)
+    console = Console() if use_rich else (Console() if Console else None)
+    progress: Progress | None = None
+    progress_task: int | None = None
+    tokens_per_step = micro_batch_size * grad_accum * seq_len
+    loss_ema: float | None = None
+    tps_ema: float | None = None
 
     start_step = 0
     last_ckpt = output_dir / "ckpt-last.pt"
@@ -196,51 +226,145 @@ def train(args: argparse.Namespace) -> None:
         start_step = load_checkpoint(last_ckpt, model, optimizer, scheduler)
         print(f"Resumed from {last_ckpt} @ step {start_step}")
 
+    if use_rich:
+        progress = Progress(
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+            TextColumn("loss={task.fields[loss]:.4f}", justify="right"),
+            TextColumn("lr={task.fields[lr]:.2e}", justify="right"),
+            TextColumn("tok/s={task.fields[tps]:.0f}", justify="right"),
+            console=console,
+            transient=False,
+        )
+        progress.start()
+        progress_task = progress.add_task(
+            "training",
+            total=max_steps,
+            completed=start_step,
+            loss=0.0,
+            lr=0.0,
+            tps=0.0,
+        )
+
     model.train()
     step = start_step
-    while step < max_steps:
-        optimizer.zero_grad()
-        accum_loss = 0.0
-        for _ in range(grad_accum):
-            batch = next(data_iter).to(device)
-            inputs, targets = collate_for_training(batch)
-            inputs = inputs.to(device)
-            targets = targets.to(device)
-            with autocast_ctx:
-                logits, _, _ = model(inputs)
-                loss = criterion(logits.reshape(-1, logits.size(-1)), targets.reshape(-1))
-                loss = loss / grad_accum
+    interrupted = False
+    if console and not use_rich and step:
+        console.log(f"Resuming at step {step}")
+
+    try:
+        while step < max_steps:
+            iter_start = time.perf_counter()
+            optimizer.zero_grad()
+            accum_loss = 0.0
+            for _ in range(grad_accum):
+                batch = next(data_iter).to(device)
+                inputs, targets = collate_for_training(batch)
+                inputs = inputs.to(device)
+                targets = targets.to(device)
+                with autocast_ctx:
+                    logits, _, _ = model(inputs)
+                    loss = criterion(
+                        logits.reshape(-1, logits.size(-1)),
+                        targets.reshape(-1),
+                    )
+                    loss = loss / grad_accum
+                if scaler.is_enabled():
+                    scaler.scale(loss).backward()
+                else:
+                    loss.backward()
+                accum_loss += float(loss.detach().item())
             if scaler.is_enabled():
-                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+            nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            if scaler.is_enabled():
+                scaler.step(optimizer)
+                scaler.update()
             else:
-                loss.backward()
-            accum_loss += float(loss.detach().item())
-        if scaler.is_enabled():
-            scaler.unscale_(optimizer)
-        nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-        if scaler.is_enabled():
-            scaler.step(optimizer)
-            scaler.update()
-        else:
-            optimizer.step()
-        scheduler.step()
-        step += 1
+                optimizer.step()
+            scheduler.step()
+            step += 1
 
-        if step % log_interval == 0 or step == 1:
-            lr = scheduler.get_last_lr()[0]
-            print(f"step={step} loss={accum_loss:.4f} lr={lr:.3e}")
-        if step % ckpt_interval == 0 or step == max_steps:
-            save_checkpoint(
-                output_dir / f"ckpt-step{step:06d}.pt",
-                model,
-                optimizer,
-                scheduler,
-                step,
-                model_config,
+            iter_time = max(time.perf_counter() - iter_start, 1e-8)
+            tokens_per_sec = tokens_per_step / iter_time
+            loss_ema = (
+                accum_loss if loss_ema is None else 0.9 * loss_ema + 0.1 * accum_loss
             )
-            save_checkpoint(last_ckpt, model, optimizer, scheduler, step, model_config)
+            tps_ema = (
+                tokens_per_sec
+                if tps_ema is None
+                else 0.9 * tps_ema + 0.1 * tokens_per_sec
+            )
+            lr = scheduler.get_last_lr()[0]
 
-    print("Training complete.")
+            if use_rich and progress and progress_task is not None:
+                progress.update(
+                    progress_task,
+                    completed=step,
+                    loss=loss_ema,
+                    lr=lr,
+                    tps=tps_ema,
+                )
+
+            if (step % log_interval == 0 or step == start_step + 1) and not use_rich:
+                msg = (
+                    f"step={step}/{max_steps} loss={accum_loss:.4f} "
+                    f"lr={lr:.3e} tok/s={tokens_per_sec:.0f}"
+                )
+                if console:
+                    console.log(msg)
+                else:
+                    print(msg)
+
+            if step % ckpt_interval == 0 or step == max_steps:
+                save_checkpoint(
+                    output_dir / f"ckpt-step{step:06d}.pt",
+                    model,
+                    optimizer,
+                    scheduler,
+                    step,
+                    model_config,
+                )
+                save_checkpoint(
+                    last_ckpt, model, optimizer, scheduler, step, model_config
+                )
+                if console:
+                    console.log(f"Checkpoint saved at step {step}")
+
+    except KeyboardInterrupt:
+        interrupted = True
+        if console:
+            console.print("[yellow]Training interrupted. Saving checkpoint...[/yellow]")
+        else:
+            print("Training interrupted. Saving checkpoint...")
+    finally:
+        if use_rich and progress:
+            progress.stop()
+
+    if interrupted:
+        save_checkpoint(
+            output_dir / f"ckpt-step{step:06d}-interrupt.pt",
+            model,
+            optimizer,
+            scheduler,
+            step,
+            model_config,
+        )
+        save_checkpoint(last_ckpt, model, optimizer, scheduler, step, model_config)
+        if console:
+            console.print(
+                f"[green]Checkpoint saved at step {step}. Resume with --resume {last_ckpt}[/green]"
+            )
+        else:
+            print(f"Checkpoint saved at step {step}. Resume with --resume {last_ckpt}")
+    else:
+        if console:
+            console.print("[green]Training complete.[/green]")
+        else:
+            print("Training complete.")
 
 
 def parse_args() -> argparse.Namespace:
