@@ -1,0 +1,37 @@
+# IDE-Specific and Editor Files
+.idea
+*.iml
+.DS_Store
+
+# AI/MCP Related Files
+CLAUDE.md
+AGENTS.md
+AGENTS.*
+.serena
+.codex
+.claude
+
+# Environment and Configuration
+.env
+.venv
+
+# Dependencies
+node_modules
+*/node_modules
+package-lock.json
+
+# Build and Compilation Output
+out
+raw_evaluations.json
+processed_snippets.json
+client/dist/
+
+# Python Specific
+__pycache__
+*.pyc
+
+# Git Related
+.gitattributes
+
+# Miscellaneous
+.bak
