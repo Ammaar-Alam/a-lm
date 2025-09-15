@@ -1,5 +1,6 @@
 # a-lm (Alam Language Model)
 (AI-assisted readme)
+
 `a-lm` is a from-scratch small language model project; this was made just for fun/curiosity :). The end goal is to train a compact decoder-only Transformer on curated open datasets, align it for chat use, and ship a streaming FastAPI endpoint plus a lightweight web widget you can embed in a portfolio.
 
 ## What gets built
@@ -19,8 +20,3 @@ Progress and open questions live in `TODO_LIST.md`. Implementation practices, co
 
 ## Current status
 Planning stage. No code scaffold yet—first milestones will establish the Python package, tooling, and dataset acquisition flow before moving into tokenizer/model implementation.
-
-## Contributing / running along
-- Primary development target: Apple Silicon (M2) using PyTorch MPS; CPU-only fallbacks will be maintained so others can clone and experiment.
-- Community contributors will be able to reproduce training locally by following the forthcoming `Makefile` and `scripts/` commands documented in the README.
-- For questions about datasets or optional features, see the “Outstanding Questions” section in `TODO_LIST.md`.
