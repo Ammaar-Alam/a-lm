@@ -163,6 +163,36 @@ When `logging.rich_progress` is `true` (default), the loop renders a Rich status
 
 Checkpoint events also log in-line (e.g. `Checkpoint saved at step 600`) so you know when it is safe to stop or resume from disk.
 
+### Tuning `configs/train.yaml`
+
+The training CLI reads hyperparameters from `configs/train.yaml`. Adjust these knobs as you scale up:
+
+| Section | Key | Description & when to change |
+| --- | --- | --- |
+| `optim` | `lr` | AdamW learning rate. Increase slightly for shorter runs or decrease if loss spikes. |
+| | `betas` | Momentum terms for AdamW. Defaults (0.9, 0.95) are stable; adjust only for advanced experiments. |
+| | `weight_decay` | L2 regularisation; lower for tiny datasets, higher for large corpora. |
+| | `eps` | Numerical stability constant; rarely needs adjustment. |
+| `scheduler` | `warmup_steps` | Linear warmup steps before cosine decay. Raise when training longer or with larger batches. |
+| | `max_steps` | Total steps that shape the cosine schedule. Match `training.max_steps` when you extend runs. |
+| `training` | `micro_batch_size` | Per-step batch size. Increase until you hit memory limits; combine with accumulation for effective batch. |
+| | `gradient_accumulation` | Number of micro batches to accumulate before an optimizer step. Increase to simulate a larger global batch on limited memory. |
+| | `global_batch_size` | Target global batch (for reference/documentation). Keep it equal to `micro_batch_size * gradient_accumulation` when you change either. |
+| | `seq_len` | Token sequence length. Use shorter sequences for debugging or longer ones when you need more context (requires repacking data). |
+| | `checkpoint_interval` | Steps between checkpoint saves. Lower to checkpoint more frequently; higher to reduce disk churn. |
+| | `gradient_clip_norm` | Norm for gradient clipping. Lower if you see exploding gradients. |
+| | `mixed_precision` | Declared precision mode (`fp16`, `bf16`, etc.). The current loop auto-selects FP16 on GPU/MPS; keep this for reference. |
+| | `grad_checkpointing` | Toggle PyTorch gradient checkpointing (saves memory at the cost of extra compute). Not yet wired into the loop. |
+| | `max_steps` | Hard stop for training. Extend for longer runs. |
+| | `dataloader_workers` | Number of background workers for loading batches. Increase if tokens/sec is bottlenecked by CPU. |
+| | `seed` | Global random seed for reproducibility. |
+| `logging` | `log_interval` | Step cadence for plain-text logging when Rich UI is disabled. |
+| | `sample_interval` | Future hook for auto-sampling. Leave as-is for now. |
+| | `output_dir` | Default directory for checkpoints/logs. Change when running multiple experiments. |
+| | `rich_progress` | Enables/disables the Rich progress bar. Set to `false` for minimal logging environments. |
+
+When you scale to longer runs, update `training.max_steps`, `scheduler.max_steps`, and (optionally) `checkpoint_interval` together to keep the cosine schedule and checkpoint cadence consistent. If you bump `seq_len`, remember to regenerate the packed dataset at the new length.
+
 ---
 
 ## Sampling From Checkpoints
