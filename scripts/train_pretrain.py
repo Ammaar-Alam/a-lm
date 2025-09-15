@@ -61,14 +61,28 @@ def load_train_config(path: Path) -> dict[str, Any]:
     return yaml.safe_load(path.read_text())
 
 
+def _as_float(value: Any, default: float) -> float:
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def build_optimizer(model: nn.Module, cfg: dict[str, Any]) -> torch.optim.Optimizer:
-    betas = tuple(cfg.get("betas", (0.9, 0.95)))
+    betas_cfg = cfg.get("betas", (0.9, 0.95))
+    if isinstance(betas_cfg, (list, tuple)) and len(betas_cfg) == 2:
+        betas = (float(betas_cfg[0]), float(betas_cfg[1]))
+    else:
+        betas = (0.9, 0.95)
+
     return torch.optim.AdamW(
         model.parameters(),
-        lr=cfg.get("lr", 3e-4),
-        betas=betas,  # type: ignore[arg-type]
-        eps=cfg.get("eps", 1e-8),
-        weight_decay=cfg.get("weight_decay", 0.1),
+        lr=_as_float(cfg.get("lr", 3e-4), 3e-4),
+        betas=betas,
+        eps=_as_float(cfg.get("eps", 1e-8), 1e-8),
+        weight_decay=_as_float(cfg.get("weight_decay", 0.1), 0.1),
     )
 
 

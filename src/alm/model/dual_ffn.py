@@ -62,9 +62,11 @@ class DualFFN(nn.Module):
 
         output = torch.zeros_like(flat)
         if small_idx.numel() > 0:
-            output.index_copy_(0, small_idx, self.ffn_small(flat.index_select(0, small_idx)))
+            small_out = self.ffn_small(flat.index_select(0, small_idx)).to(flat.dtype)
+            output.index_copy_(0, small_idx, small_out)
         if large_idx.numel() > 0:
-            output.index_copy_(0, large_idx, self.ffn_large(flat.index_select(0, large_idx)))
+            large_out = self.ffn_large(flat.index_select(0, large_idx)).to(flat.dtype)
+            output.index_copy_(0, large_idx, large_out)
 
         stats = RouterStats(
             routed_small=int(small_idx.numel()),

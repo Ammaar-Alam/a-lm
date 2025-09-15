@@ -30,17 +30,38 @@ class Tokenizer:
         while i < length:
             match = None
             for token in self._sorted_tokens:
-                if normalized.startswith(token, i):
+                if normalized.startswith(token, i) and token in self.vocab.token_to_id:
                     match = token
                     break
-            if not match:
-                match = normalized[i]
-            ids.append(self.vocab.encode(match))
-            i += len(match)
+
+            if match is None:
+                char = normalized[i]
+                for b in char.encode("utf-8"):
+                    ids.append(self.vocab.encode(chr(b)))
+                i += 1
+            else:
+                ids.append(self.vocab.encode(match))
+                i += len(match)
         return ids
 
     def decode(self, ids: list[int]) -> str:
-        return "".join(self.vocab.decode(i) for i in ids)
+        parts: list[str] = []
+        byte_buffer = bytearray()
+
+        for idx in ids:
+            token = self.vocab.decode(idx)
+            if len(token) == 1 and ord(token) < 256:
+                byte_buffer.append(ord(token))
+            else:
+                if byte_buffer:
+                    parts.append(byte_buffer.decode("utf-8", errors="replace"))
+                    byte_buffer.clear()
+                parts.append(token)
+
+        if byte_buffer:
+            parts.append(byte_buffer.decode("utf-8", errors="replace"))
+
+        return "".join(parts)
 
     @classmethod
     def from_file(cls, path: Path) -> Tokenizer:

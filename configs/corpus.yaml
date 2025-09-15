@@ -9,7 +9,7 @@ sources:
     notes: "Educational slice of FineWeb; high quality web text."
   wikipedia_en:
     kind: huggingface
-    dataset: wikipedia
+    dataset: wikimedia/wikipedia
     config: 20231101.en
     split: train
     streaming: true

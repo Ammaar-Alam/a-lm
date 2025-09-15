@@ -57,6 +57,7 @@ def train_bpe(corpus: Iterable[str], vocab_size: int) -> Vocabulary:
 
 
 def save_vocab(vocab: Vocabulary, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     data = {"tokens": vocab.id_to_token}
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
 
