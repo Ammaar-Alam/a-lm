@@ -1,6 +1,29 @@
-# IDE-Specific and Editor Files
-.idea
-*.iml
+# Environments
+.venv/
+.env
+.env.local
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.so
+*.dylib
+
+# Tooling caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Project outputs
+artifacts/
+data/
+runs/
+logs/
+checkpoints/
+
+# OS files
 .DS_Store
 
 # AI/MCP Related Files

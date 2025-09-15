@@ -1,0 +1,80 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "a-lm"
+version = "0.1.0"
+description = "Alam Language Model research stack"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "a-lm contributors" }]
+license = { text = "Apache-2.0" }
+keywords = ["language-model", "transformer", "machine-learning", "fastapi"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+]
+dependencies = [
+    "datasets>=2.19",
+    "fastapi>=0.115",
+    "numpy>=1.26",
+    "pydantic>=2.6",
+    "rich>=13.7",
+    "torch>=2.2",
+    "tqdm>=4.66",
+    "uvicorn[standard]>=0.30",
+]
+
+[project.optional-dependencies]
+dev = [
+    "mypy>=1.10",
+    "pre-commit>=3.7",
+    "pytest>=8.2",
+    "ruff>=0.4",
+    "types-requests>=2.32",
+]
+
+docs = [
+    "mkdocs-material>=9.5",
+]
+
+[project.urls]
+homepage = "https://github.com/alam/a-lm"
+repository = "https://github.com/alam/a-lm"
+issues = "https://github.com/alam/a-lm/issues"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "PT", "SIM"]
+ignore = ["B905"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-config --strict-markers"
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["amlm"]
+branch = true
+
+[tool.coverage.report]
+omit = ["tests/*"]
+show_missing = true
+precision = 1
