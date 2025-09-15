@@ -159,7 +159,7 @@ def train(args: argparse.Namespace) -> None:
     optimizer = build_optimizer(model, train_config.get("optim", {}))
     scheduler = build_scheduler(optimizer, train_config.get("scheduler", {}))
 
-    scaler = torch.cuda.amp.GradScaler(enabled=device.type == "cuda")
+    scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")
     autocast_ctx = (
         torch.cuda.amp.autocast(device_type="cuda", dtype=torch.float16)
         if device.type == "cuda"
