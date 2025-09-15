@@ -32,7 +32,45 @@ Tokenizer and model layers are available today:
 - Core Transformer components (RMSNorm, SwiGLU, RoPE/ALiBi, grouped attention, dual FFN, `TransformerModel`) reside in `src/alm/model/` with shape and cache tests in `tests/model/`.
 
 ## Dataset notes
-Initial data work focuses on high-quality, permissively licensed corpora. FineWeb-Edu (`https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu`) is the primary web slice; TinyStories and filtered chat datasets supplement it. Upcoming scripts will automate downloads via the Hugging Face `datasets` library (you’ll need a Hugging Face account/token) and emit cleaned text under `data/clean/` before packing into contiguous token shards.
+Initial data work focuses on high-quality, permissively licensed corpora. FineWeb-Edu (`https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu`) is the primary web slice; TinyStories and filtered chat datasets supplement it.
+
+### One-time prerequisites
+1. Create (or use) a Hugging Face account.
+2. Generate a read token in your HF account settings.
+3. Log in locally so the `datasets` library can stream private endpoints:
+   ```bash
+   huggingface-cli login
+   # or export HF_TOKEN=... before running the scripts
+   ```
+
+### Prepare text corpora
+```
+# 1) Clean and normalize sources defined in configs/corpus.yaml
+python scripts/prepare_corpus.py \
+  --src configs/corpus.yaml \
+  --out data/clean
+
+# 2) Train (or reuse) the tokenizer
+python scripts/train_tokenizer.py \
+  --input data/clean/*.txt \
+  --vocab-size 32000 \
+  --out artifacts/tokenizer.json
+
+# 3) Pack cleaned text into token shards
+python scripts/pack_dataset.py \
+  --tokenizer artifacts/tokenizer.json \
+  --in data/clean \
+  --out data/packed \
+  --seq-len 512 \
+  --shard-size 2048
+```
+
+Resulting directories:
+- `data/clean/` – normalized `.txt` files + source metadata.
+- `artifacts/tokenizer.json` – tokenizer vocab produced by step (2).
+- `data/packed/` – contiguous `.bin` shards + `metadata.json` describing sequence length, shard count, and total tokens.
+
+When you want to try a different dataset (e.g., your own export), create a new entry in `configs/corpus.yaml`, rerun the commands above, and point future training runs at the freshly packed directory.
 
 ## Current status
 Planning and foundational code are in place. Tokenizer tooling and the Transformer backbone are implemented with tests; the next milestone will deliver data preparation scripts and sharded token packs so pretraining can begin.
