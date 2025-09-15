@@ -9,6 +9,7 @@ src/a_lm.egg-info/top_level.txt
 src/alm/__init__.py
 src/alm/data/__init__.py
 src/alm/data/config.py
+src/alm/data/dataset.py
 src/alm/data/pack.py
 src/alm/data/prepare.py
 src/alm/eval/__init__.py

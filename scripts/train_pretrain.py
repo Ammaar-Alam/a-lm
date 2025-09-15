@@ -192,9 +192,7 @@ def train(args: argparse.Namespace) -> None:
 
     model = TransformerModel(model_config).to(device)
     optimizer = build_optimizer(model, train_config.get("optim", {}))
-    scheduler = build_scheduler(
-        optimizer, train_config.get("scheduler", {}), max_steps
-    )
+    scheduler = build_scheduler(optimizer, train_config.get("scheduler", {}), max_steps)
 
     scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")
     autocast_ctx = (
@@ -290,14 +288,8 @@ def train(args: argparse.Namespace) -> None:
 
             iter_time = max(time.perf_counter() - iter_start, 1e-8)
             tokens_per_sec = tokens_per_step / iter_time
-            loss_ema = (
-                accum_loss if loss_ema is None else 0.9 * loss_ema + 0.1 * accum_loss
-            )
-            tps_ema = (
-                tokens_per_sec
-                if tps_ema is None
-                else 0.9 * tps_ema + 0.1 * tokens_per_sec
-            )
+            loss_ema = accum_loss if loss_ema is None else 0.9 * loss_ema + 0.1 * accum_loss
+            tps_ema = tokens_per_sec if tps_ema is None else 0.9 * tps_ema + 0.1 * tokens_per_sec
             lr = scheduler.get_last_lr()[0]
 
             if use_rich and progress and progress_task is not None:
@@ -328,9 +320,7 @@ def train(args: argparse.Namespace) -> None:
                     step,
                     model_config,
                 )
-                save_checkpoint(
-                    last_ckpt, model, optimizer, scheduler, step, model_config
-                )
+                save_checkpoint(last_ckpt, model, optimizer, scheduler, step, model_config)
                 if console:
                     console.log(f"Checkpoint saved at step {step}")
 
