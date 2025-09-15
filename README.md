@@ -124,8 +124,10 @@ Optional but helpful:
 ---
 
 ## Pretraining Loop
-6. Launch a pico-scale pretraining run (auto-detects device). Recommended for sanity-checks:
+6. Launch a pico-scale pretraining run (auto-detects device). This setup keeps runs to roughly an hour on an M2.
    ```bash
+   source .venv/bin/activate                     # reuse the prepared virtualenv
+   export PYTORCH_MPS_FAST_MATH=1                # enable fast Metal kernels (optional, Apple Silicon)
    python scripts/train_pretrain.py \
      --model configs/pico.yaml \
      --train configs/train.yaml \
@@ -133,9 +135,33 @@ Optional but helpful:
      --out runs/pico-pretrain \
      --device auto
    ```
-   - Checkpoints saved to `runs/pico-pretrain/` (`ckpt-stepXXXXXX.pt`, `ckpt-last.pt`).
-   - Resume automatically from `--resume path/to/ckpt.pt` or the default `ckpt-last.pt` inside `--out`.
-   - Hyperparameters? Edit `configs/train.yaml` (micro batch size, accum steps, grad clip, max steps, logging interval, checkpoint cadence).
+   - Checkpoints land in `runs/pico-pretrain/` (`ckpt-stepXXXXXX.pt`, `ckpt-last.pt`).
+   - Press `Ctrl+C` any time; the loop saves both `ckpt-last.pt` and an interrupt-tagged checkpoint before exiting.
+   - Resume later with:
+     ```bash
+     python scripts/train_pretrain.py \
+       --model configs/pico.yaml \
+       --train configs/train.yaml \
+       --data data/packed \
+       --out runs/pico-pretrain \
+       --device auto \
+       --resume runs/pico-pretrain/ckpt-last.pt
+     ```
+   - Want different hyperparameters? Edit `configs/train.yaml` (batch size, accumulation, warmup, scheduler horizon, checkpoint cadence, DataLoader workers).
+
+### Understanding the Training Progress UI
+When `logging.rich_progress` is `true` (default), the loop renders a Rich status panel:
+
+| Segment | Meaning |
+| --- | --- |
+| **Bar + %** | Completion relative to `training.max_steps`. The coloured bar advances as each step finishes. |
+| **Elapsed** (`0:01:25`) | Wall-clock time since the run (or resume) started. |
+| **ETA** (`0:09:17`) | Estimated time remaining given the current token throughput. |
+| **loss=…** | Exponentially-smoothed training loss over recent steps. |
+| **lr=…** | Current learning rate from the cosine scheduler. Helpful for spotting warmup or cooldown stages. |
+| **tok/s=…** | Tokens processed per second (smoothed). Use this to judge whether the GPU/MPS is being fed fast enough. |
+
+Checkpoint events also log in-line (e.g. `Checkpoint saved at step 600`) so you know when it is safe to stop or resume from disk.
 
 ---
 
