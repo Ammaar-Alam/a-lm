@@ -37,3 +37,16 @@ class ModelConfig:
         if not self.dual_ffn.enabled:
             return self.ffn_hidden_size
         return max(1, int(self.ffn_hidden_size * self.dual_ffn.small_ratio))
+
+    @classmethod
+    def from_dict(cls, data: dict) -> ModelConfig:
+        dual = data.get("dual_ffn", {})
+        dual_cfg = DualFFNConfig(
+            enabled=dual.get("enabled", True),
+            small_ratio=dual.get("small_ratio", 0.5),
+            router_temperature=dual.get("router_temperature", 1.0),
+            capacity_factor=dual.get("capacity_factor", 1.0),
+            drop_tokens=dual.get("drop_tokens", False),
+        )
+        fields = {k: v for k, v in data.items() if k != "dual_ffn"}
+        return cls(dual_ffn=dual_cfg, **fields)

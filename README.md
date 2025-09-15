@@ -31,6 +31,37 @@ Tokenizer and model layers are available today:
 - Tokenizer modules live in `src/alm/tokenizers/` with coverage in `tests/tokenizers/`.
 - Core Transformer components (RMSNorm, SwiGLU, RoPE/ALiBi, grouped attention, dual FFN, `TransformerModel`) reside in `src/alm/model/` with shape and cache tests in `tests/model/`.
 
+### Kick off a pico pretrain run
+After preparing data/tokenizer (see Dataset notes above):
+
+```
+python scripts/train_pretrain.py \
+  --model configs/pico.yaml \
+  --train configs/train.yaml \
+  --data data/packed \
+  --out runs/pico-pretrain \
+  --device auto
+```
+
+- The script resumes automatically from `runs/pico-pretrain/ckpt-last.pt` if it exists (or pass `--resume path/to/ckpt.pt`).
+- Checkpoints are saved per `checkpoint_interval` and contain both weights and the model config so other scripts can reload them.
+- Adjust hyperparameters by editing `configs/train.yaml` or overriding flags (e.g., change `micro_batch_size`, `max_steps`).
+
+### Sample from a checkpoint
+
+```
+python scripts/sample_text.py \
+  --checkpoint runs/pico-pretrain/ckpt-last.pt \
+  --tokenizer artifacts/tokenizer.json \
+  --prompt "Hello" \
+  --max-tokens 50 \
+  --temperature 0.8 \
+  --top-k 40 \
+  --device auto
+```
+
+`sample_text.py` performs plain greedy/top-k sampling so you can sanity-check generations mid-training or compare checkpoints.
+
 ## Dataset notes
 Initial data work focuses on high-quality, permissively licensed corpora. FineWeb-Edu (`https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu`) is the primary web slice; TinyStories and filtered chat datasets supplement it.
 
