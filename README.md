@@ -169,9 +169,9 @@ When `logging.rich_progress` is `true` (default), the loop renders a Rich status
 | **Bar + %** | Completion relative to `training.max_steps`. The coloured bar advances as each step finishes. |
 | **Elapsed** (`0:01:25`) | Wall-clock time since the run (or resume) started. |
 | **ETA** (`0:09:17`) | Estimated time remaining given the current token throughput. |
-| **loss=…** | Exponentially-smoothed training loss over recent steps. |
+| **loss=…** | Exponentially-smoothed training loss over recent steps. On the pico run we’re tracking, the loss started near 6 and is now hovering around **4.0** by step 2.7k; expect it to fall into the low 3s only after a few hundred million tokens. |
 | **lr=…** | Current learning rate from the cosine scheduler. Helpful for spotting warmup or cooldown stages. |
-| **tok/s=…** | Tokens processed per second (smoothed). Use this to judge whether the GPU/MPS is being fed fast enough. |
+| **tok/s=…** | Tokens processed per second (smoothed). Our current pico run on an M2 tops out around **5–5.5k tok/s** with the 8×8 batch layout; treat that as a healthy baseline when experimenting. |
 
 Checkpoint events also log in-line (e.g. `Checkpoint saved at step 600`) so you know when it is safe to stop or resume from disk.
 
@@ -181,7 +181,7 @@ The training CLI reads hyperparameters from `configs/train.yaml`. Adjust these k
 
 | Section | Key | Description & when to change |
 | --- | --- | --- |
-| `optim` | `lr` | AdamW learning rate. Increase slightly for shorter runs or decrease if loss spikes. |
+| `optim` | `lr` | AdamW learning rate. We’re currently training the pico config at **3e-4**; leave it here while loss is steadily trending down. Only consider lowering it if the loss stalls or spikes. |
 | | `betas` | Momentum terms for AdamW. Defaults (0.9, 0.95) are stable; adjust only for advanced experiments. |
 | | `weight_decay` | L2 regularisation; lower for tiny datasets, higher for large corpora. |
 | | `eps` | Numerical stability constant; rarely needs adjustment. |
