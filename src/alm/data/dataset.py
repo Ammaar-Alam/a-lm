@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections import OrderedDict
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -39,7 +40,7 @@ class PackedDataset(Dataset[torch.Tensor]):
         itemsize = np.dtype(np.uint32).itemsize
 
         offset = 0
-        for shard_idx, name in enumerate(shard_names):
+        for _shard_idx, name in enumerate(shard_names):
             shard_path = root / name
             if not shard_path.exists():
                 raise FileNotFoundError(f"Shard {name} missing in {root}")
@@ -83,10 +84,8 @@ class PackedDataset(Dataset[torch.Tensor]):
 
         if len(self._cache) > self._max_cached_shards:
             old_index, old_arr = self._cache.popitem(last=False)
-            try:
+            with suppress(AttributeError):
                 old_arr._mmap.close()  # type: ignore[attr-defined]
-            except AttributeError:
-                pass
         return arr
 
 
