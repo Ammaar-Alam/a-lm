@@ -23,10 +23,10 @@ training:
   grad_checkpointing: false
   seed: 1337
   max_steps: 100000
-  dataloader_workers: 1
+  dataloader_workers: 2
 
 logging:
-  log_interval: 5
+  log_interval: 10
   sample_interval: 5000
   output_dir: runs/pico-pretrain
-  rich_progress: true
+  rich_progress: false
