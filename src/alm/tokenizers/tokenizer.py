@@ -9,14 +9,32 @@ from .normalizer import normalize_text
 from .vocab import Vocabulary
 
 
+class _TrieNode:
+    __slots__ = ("children", "token_id")
+
+    def __init__(self) -> None:
+        self.children: dict[str, _TrieNode] = {}
+        self.token_id: int | None = None
+
+
 class Tokenizer:
     def __init__(self, vocab: Vocabulary) -> None:
         self.vocab = vocab
-        self._sorted_tokens = sorted(
-            self.vocab.id_to_token,
-            key=len,
-            reverse=True,
-        )
+        self._root = _TrieNode()
+        self._byte_ids: dict[str, int] = {}
+        for i in range(256):
+            char = chr(i)
+            token_id = self.vocab.token_to_id.get(char)
+            if token_id is not None:
+                self._byte_ids[char] = token_id
+        for token, idx in self.vocab.token_to_id.items():
+            self._insert(token, idx)
+
+    def _insert(self, token: str, token_id: int) -> None:
+        node = self._root
+        for char in token:
+            node = node.children.setdefault(char, _TrieNode())
+        node.token_id = token_id
 
     @property
     def vocab_size(self) -> int:
@@ -27,21 +45,36 @@ class Tokenizer:
         ids: list[int] = []
         i = 0
         length = len(normalized)
+        append = ids.append
+        vocab_encode = self.vocab.encode
+        byte_ids = self._byte_ids
         while i < length:
-            match = None
-            for token in self._sorted_tokens:
-                if normalized.startswith(token, i) and token in self.vocab.token_to_id:
-                    match = token
+            node = self._root
+            best_id: int | None = None
+            best_pos = i
+            j = i
+            while j < length:
+                next_char = normalized[j]
+                child = node.children.get(next_char)
+                if child is None:
                     break
-
-            if match is None:
-                char = normalized[i]
-                for b in char.encode("utf-8"):
-                    ids.append(self.vocab.encode(chr(b)))
-                i += 1
+                node = child
+                j += 1
+                if node.token_id is not None:
+                    best_id = node.token_id
+                    best_pos = j
+            if best_id is not None:
+                append(best_id)
+                i = best_pos
+                continue
+            char = normalized[i]
+            byte_token_id = byte_ids.get(char)
+            if byte_token_id is not None:
+                append(byte_token_id)
             else:
-                ids.append(self.vocab.encode(match))
-                i += len(match)
+                for byte in char.encode("utf-8"):
+                    append(vocab_encode(chr(byte)))
+            i += 1
         return ids
 
     def decode(self, ids: list[int]) -> str:

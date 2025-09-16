@@ -22,6 +22,11 @@ def parse_args() -> argparse.Namespace:
         "--shard-size", type=int, default=2048, help="Number of tokens per shard chunk"
     )
     parser.add_argument("--eos", default="\n", help="EoS string appended between documents")
+    parser.add_argument(
+        "--no-progress",
+        action="store_true",
+        help="Disable live progress display",
+    )
     return parser.parse_args()
 
 
@@ -32,13 +37,19 @@ def main() -> None:
     files = sorted(input_dir.glob("*.txt"))
     if not files:
         raise SystemExit("No .txt files found in input directory")
-    pack_tokens(
+    metadata = pack_tokens(
         tokenizer,
         iter_text_files(files),
         seq_len=args.seq_len,
         shard_size=args.shard_size,
         out_dir=Path(args.out),
         eos_token=args.eos,
+        show_progress=not args.no_progress,
+    )
+    total_shards = len(metadata["shards"])
+    total_tokens = metadata["total_tokens"]
+    print(
+        f"Packed {total_tokens:,} tokens across {total_shards:,} shards (seq_len={args.seq_len})."
     )
 
 
