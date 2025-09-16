@@ -57,6 +57,7 @@ def load_model_config(path: Path) -> ModelConfig:
         capacity_factor=dual_cfg.get("capacity_factor", 1.0),
         drop_tokens=dual_cfg.get("drop_tokens", False),
     )
+    attn_cfg = data.get("attention", {})
     return ModelConfig(
         d_model=model_data["d_model"],
         n_layers=model_data["n_layers"],
@@ -69,6 +70,7 @@ def load_model_config(path: Path) -> ModelConfig:
         dropout=model_data.get("dropout", 0.0),
         alibi=model_data.get("alibi", False),
         dual_ffn=dual,
+        attn_backend=attn_cfg.get("backend", "math"),
     )
 
 

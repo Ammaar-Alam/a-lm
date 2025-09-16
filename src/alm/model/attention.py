@@ -10,6 +10,24 @@ from torch.nn import functional as F
 
 from .rope import apply_rope
 
+_CAUSAL_MASK_CACHE: dict[tuple[int, int, str, int | None, torch.dtype], torch.Tensor] = {}
+
+
+def get_causal_additive_mask(
+    q_len: int, k_len: int, device: torch.device, dtype: torch.dtype
+) -> torch.Tensor:
+    key = (q_len, k_len, device.type, device.index, dtype)
+    cached = _CAUSAL_MASK_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    neg = -1e4 if dtype in {torch.float16, torch.bfloat16} else -1e9
+    mask = torch.full((q_len, k_len), neg, dtype=dtype, device=device)
+    mask = torch.triu(mask, diagonal=1)
+    _CAUSAL_MASK_CACHE[key] = mask
+    return mask
+
+
 KeyValueCache = tuple[torch.Tensor, torch.Tensor]
 
 
@@ -22,7 +40,7 @@ def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
 
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, dim: int, n_heads: int, n_kv_heads: int) -> None:
+    def __init__(self, dim: int, n_heads: int, n_kv_heads: int, backend: str = "math") -> None:
         super().__init__()
         assert dim % n_heads == 0, "dim must be divisible by number of heads"
         assert n_heads % n_kv_heads == 0, "n_heads must be multiple of n_kv_heads"
@@ -31,6 +49,7 @@ class MultiHeadAttention(nn.Module):
         self.n_kv_heads = n_kv_heads
         self.head_dim = dim // n_heads
         self.num_groups = n_heads // n_kv_heads
+        self.backend = backend
 
         self.q_proj = nn.Linear(dim, dim, bias=False)
         self.k_proj = nn.Linear(dim, n_kv_heads * self.head_dim, bias=False)
@@ -74,7 +93,8 @@ class MultiHeadAttention(nn.Module):
         v = repeat_kv(v, self.num_groups)
 
         use_sdpa = (
-            past_key_value is None
+            self.backend == "sdpa"
+            and past_key_value is None
             and alibi_bias is None
             and attention_mask is None
             and hasattr(F, "scaled_dot_product_attention")
@@ -87,12 +107,16 @@ class MultiHeadAttention(nn.Module):
                 v,
                 attn_mask=None,
                 dropout_p=0.0,
-                is_causal=False,
+                is_causal=True,
             )
         else:
             attn_scores = torch.matmul(q, k.transpose(-2, -1)) * (1.0 / math.sqrt(self.head_dim))
             q_len = attn_scores.shape[-2]
             k_len = attn_scores.shape[-1]
+
+            attn_scores = attn_scores + get_causal_additive_mask(
+                q_len, k_len, attn_scores.device, attn_scores.dtype
+            )
 
             if alibi_bias is not None:
                 attn_scores = attn_scores + alibi_bias[:, None, :q_len, :k_len]

@@ -11,7 +11,7 @@ from .attention import MultiHeadAttention
 from .config import ModelConfig
 from .dual_ffn import DualFFN, RouterStats
 from .rmsnorm import RMSNorm
-from .rope import rope_angles
+from .rope import rope_angles_cached
 
 KeyValueCache = tuple[torch.Tensor, torch.Tensor]
 
@@ -27,7 +27,9 @@ class TransformerLayer(nn.Module):
     def __init__(self, config: ModelConfig) -> None:
         super().__init__()
         self.config = config
-        self.attn = MultiHeadAttention(config.d_model, config.n_heads, config.n_kv_heads)
+        self.attn = MultiHeadAttention(
+            config.d_model, config.n_heads, config.n_kv_heads, backend=config.attn_backend
+        )
         self.attn_norm = RMSNorm(config.d_model)
         self.ffn_norm = RMSNorm(config.d_model)
         self.dropout = nn.Dropout(config.dropout)
@@ -109,14 +111,13 @@ class TransformerModel(nn.Module):
         caches: list[KeyValueCache | None] = []
         router_stats: list[RouterStats | None] = []
 
-        cos, sin = rope_angles(
+        cos, sin = rope_angles_cached(
             input_ids.size(1),
             self.config.head_dim,
             theta=self.config.rope_theta,
             offset=past_len,
+            device=hidden_states.device,
         )
-        cos = cos.to(hidden_states.device)
-        sin = sin.to(hidden_states.device)
 
         formatted_mask = _format_attention_mask(attention_mask)
 

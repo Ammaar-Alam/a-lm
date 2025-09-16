@@ -15,18 +15,18 @@ training:
   micro_batch_size: 8
   global_batch_size: 64
   seq_len: 512
-  eval_interval: 2000
-  checkpoint_interval: 2000
+  eval_interval: 4000
+  checkpoint_interval: 4000
   gradient_clip_norm: 1.0
   gradient_accumulation: 8
   mixed_precision: fp16
-  grad_checkpointing: true
+  grad_checkpointing: false
   seed: 1337
   max_steps: 100000
-  dataloader_workers: 4
+  dataloader_workers: 1
 
 logging:
-  log_interval: 10
+  log_interval: 5
   sample_interval: 5000
   output_dir: runs/pico-pretrain
   rich_progress: true

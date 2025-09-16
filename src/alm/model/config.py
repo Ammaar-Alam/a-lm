@@ -27,6 +27,7 @@ class ModelConfig:
     dropout: float = 0.0
     alibi: bool = False
     dual_ffn: DualFFNConfig = field(default_factory=DualFFNConfig)
+    attn_backend: str = "math"
 
     @property
     def head_dim(self) -> int:

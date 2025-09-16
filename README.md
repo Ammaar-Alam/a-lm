@@ -150,6 +150,7 @@ Optional but helpful:
    - Press `Ctrl+C` any time; the loop saves both `ckpt-last.pt` and an interrupt-tagged checkpoint before exiting.
    - Resume later with:
      ```bash
+     export PYTORCH_MPS_FAST_MATH=1
      python scripts/train_pretrain.py \
        --model configs/pico.yaml \
        --train configs/train.yaml \

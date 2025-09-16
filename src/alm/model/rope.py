@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import torch
 
+_ROPE_CACHE: dict[tuple[int, int, float, int, str], tuple[torch.Tensor, torch.Tensor]] = {}
+
 
 def rotate_half(x: torch.Tensor) -> torch.Tensor:
     x1, x2 = x.chunk(2, dim=-1)
@@ -25,6 +27,32 @@ def rope_angles(
     freqs = torch.einsum("i,j->ij", positions, inv_freq)
     cos = torch.repeat_interleave(freqs.cos(), 2, dim=-1)
     sin = torch.repeat_interleave(freqs.sin(), 2, dim=-1)
+    return cos, sin
+
+
+def rope_angles_cached(
+    seq_len: int,
+    dim: int,
+    theta: float = 10000.0,
+    base: float | None = None,
+    offset: int = 0,
+    device: torch.device | None = None,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    cache_key = (
+        seq_len,
+        dim,
+        float(theta if base is None else base),
+        offset,
+        str(device) if device is not None else "cpu",
+    )
+    cached = _ROPE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    cos, sin = rope_angles(seq_len, dim, theta=theta, base=base, offset=offset)
+    if device is not None:
+        cos = cos.to(device)
+        sin = sin.to(device)
+    _ROPE_CACHE[cache_key] = (cos, sin)
     return cos, sin
 
 
