@@ -200,6 +200,7 @@ def train(args: argparse.Namespace) -> None:
     grad_accum = int(training_cfg.get("gradient_accumulation", 1))
     max_steps = int(training_cfg.get("max_steps", 1000))
     grad_clip = float(training_cfg.get("gradient_clip_norm", 1.0))
+    mixed_precision = str(training_cfg.get("mixed_precision", "fp32")).lower()
 
     device = resolve_device(args.device)
 
@@ -218,6 +219,48 @@ def train(args: argparse.Namespace) -> None:
 
     torch.set_float32_matmul_precision("high")
 
+    def configure_precision(
+        target: str,
+    ) -> tuple[Any, torch.amp.GradScaler, str]:
+        requested = target
+        if requested == "auto":
+            requested = "fp16" if device.type in {"cuda", "mps"} else "fp32"
+        if requested not in {"fp32", "fp16", "bf16"}:
+            raise ValueError(f"Unsupported mixed_precision='{target}'")
+
+        effective = requested
+        scaler = torch.amp.GradScaler(device.type, enabled=False)
+        ctx: Any
+
+        if requested == "fp16":
+            if device.type == "cuda":
+                scaler = torch.amp.GradScaler("cuda", enabled=True)
+                ctx = torch.cuda.amp.autocast(device_type="cuda", dtype=torch.float16)
+            elif device.type == "mps":
+                scaler = torch.amp.GradScaler("mps", enabled=True)
+                ctx = torch.autocast(device_type="mps", dtype=torch.float16)
+            else:
+                effective = "fp32"
+                ctx = nullcontext()
+        elif requested == "bf16":
+            if device.type == "cuda":
+                ctx = torch.cuda.amp.autocast(device_type="cuda", dtype=torch.bfloat16)
+            elif device.type == "cpu":
+                ctx = torch.autocast(device_type="cpu", dtype=torch.bfloat16)
+            else:
+                effective = "fp32"
+                ctx = nullcontext()
+        else:
+            ctx = nullcontext()
+
+        if effective == "fp32":
+            scaler = torch.amp.GradScaler(device.type, enabled=False)
+            ctx = nullcontext()
+
+        return ctx, scaler, effective
+
+    autocast_ctx, scaler, precision_used = configure_precision(mixed_precision)
+
     model = TransformerModel(model_config).to(device)
     if training_cfg.get("grad_checkpointing", False):
         model.enable_gradient_checkpointing()
@@ -226,14 +269,13 @@ def train(args: argparse.Namespace) -> None:
     optimizer = build_optimizer(model, optim_cfg)
     scheduler = build_scheduler(optimizer, train_config.get("scheduler", {}), max_steps)
 
-    scaler = torch.amp.GradScaler("cuda", enabled=device.type == "cuda")
-    autocast_ctx = (
-        torch.cuda.amp.autocast(device_type="cuda", dtype=torch.float16)
-        if device.type == "cuda"
-        else torch.autocast(device_type="mps", dtype=torch.float16)
-        if device.type == "mps"
-        else nullcontext()
-    )
+    if mixed_precision != precision_used:
+        print(
+            f"Mixed precision '{mixed_precision}' not supported on {device.type}, "
+            f"falling back to '{precision_used}'"
+        )
+    else:
+        print(f"Using mixed precision '{precision_used}' on {device.type}")
 
     criterion = nn.CrossEntropyLoss()
     log_cfg = train_config.get("logging", {})

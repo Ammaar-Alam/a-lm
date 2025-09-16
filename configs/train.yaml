@@ -12,13 +12,13 @@ scheduler:
   max_steps: 100000
 
 training:
-  micro_batch_size: 4
+  micro_batch_size: 8
   global_batch_size: 64
   seq_len: 512
   eval_interval: 4000
   checkpoint_interval: 4000
   gradient_clip_norm: 0.5
-  gradient_accumulation: 4
+  gradient_accumulation: 8
   mixed_precision: fp32
   grad_checkpointing: false
   seed: 1337
