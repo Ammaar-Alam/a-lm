@@ -6,6 +6,7 @@ import math
 
 import torch
 from torch import nn
+from torch.nn import functional as F
 
 from .rope import apply_rope
 
@@ -72,18 +73,37 @@ class MultiHeadAttention(nn.Module):
         k = repeat_kv(k, self.num_groups)
         v = repeat_kv(v, self.num_groups)
 
-        attn_scores = torch.matmul(q, k.transpose(-2, -1)) * (1.0 / math.sqrt(self.head_dim))
-        q_len = attn_scores.shape[-2]
-        k_len = attn_scores.shape[-1]
+        use_sdpa = (
+            past_key_value is None
+            and alibi_bias is None
+            and attention_mask is None
+            and hasattr(F, "scaled_dot_product_attention")
+        )
 
-        if alibi_bias is not None:
-            attn_scores = attn_scores + alibi_bias[:, None, :q_len, :k_len]
+        if use_sdpa:
+            attn_output = F.scaled_dot_product_attention(
+                q,
+                k,
+                v,
+                attn_mask=None,
+                dropout_p=0.0,
+                is_causal=False,
+            )
+        else:
+            attn_scores = torch.matmul(q, k.transpose(-2, -1)) * (
+                1.0 / math.sqrt(self.head_dim)
+            )
+            q_len = attn_scores.shape[-2]
+            k_len = attn_scores.shape[-1]
 
-        if attention_mask is not None:
-            attn_scores = attn_scores + attention_mask
+            if alibi_bias is not None:
+                attn_scores = attn_scores + alibi_bias[:, None, :q_len, :k_len]
 
-        attn_weights = torch.nn.functional.softmax(attn_scores, dim=-1, dtype=torch.float32)
-        attn_output = torch.matmul(attn_weights.to(q.dtype), v)
+            if attention_mask is not None:
+                attn_scores = attn_scores + attention_mask
+
+            attn_weights = torch.nn.functional.softmax(attn_scores, dim=-1, dtype=torch.float32)
+            attn_output = torch.matmul(attn_weights.to(q.dtype), v)
 
         attn_output = attn_output.transpose(1, 2).contiguous().view(bsz, seq_len, self.dim)
         output = self.out_proj(attn_output)

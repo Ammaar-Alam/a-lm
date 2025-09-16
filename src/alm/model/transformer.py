@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import torch
 from torch import nn
+from torch.utils.checkpoint import checkpoint
 
 from .alibi import build_alibi_bias
 from .attention import MultiHeadAttention
@@ -86,6 +87,10 @@ class TransformerModel(nn.Module):
         self.layers = nn.ModuleList([TransformerLayer(config) for _ in range(config.n_layers)])
         self.final_norm = RMSNorm(config.d_model)
         self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
+        self.gradient_checkpointing = False
+
+    def enable_gradient_checkpointing(self) -> None:
+        self.gradient_checkpointing = True
 
     def forward(
         self,
@@ -126,18 +131,38 @@ class TransformerModel(nn.Module):
                 past_len=past_len,
             )
 
+        use_checkpoint = self.gradient_checkpointing and self.training and not use_cache
+
         for layer, past in zip(self.layers, past_key_values):
-            hidden_states, present, stats = layer(
-                hidden_states,
-                formatted_mask,
-                cos,
-                sin,
-                alibi_bias,
-                past,
-                use_cache,
-            )
-            caches.append(present if use_cache else None)
-            router_stats.append(stats)
+            if use_checkpoint:
+
+                def layer_forward(x: torch.Tensor, *, _layer=layer) -> torch.Tensor:
+                    output, _, _ = _layer(
+                        x,
+                        formatted_mask,
+                        cos,
+                        sin,
+                        alibi_bias,
+                        None,
+                        False,
+                    )
+                    return output
+
+                hidden_states = checkpoint(layer_forward, hidden_states, use_reentrant=False)
+                caches.append(None)
+                router_stats.append(None)
+            else:
+                hidden_states, present, stats = layer(
+                    hidden_states,
+                    formatted_mask,
+                    cos,
+                    sin,
+                    alibi_bias,
+                    past,
+                    use_cache,
+                )
+                caches.append(present if use_cache else None)
+                router_stats.append(stats)
 
         hidden_states = self.final_norm(hidden_states)
         logits = self.lm_head(hidden_states)

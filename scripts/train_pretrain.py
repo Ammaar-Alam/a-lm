@@ -191,6 +191,8 @@ def train(args: argparse.Namespace) -> None:
     torch.set_float32_matmul_precision("high")
 
     model = TransformerModel(model_config).to(device)
+    if training_cfg.get("grad_checkpointing", False):
+        model.enable_gradient_checkpointing()
     optimizer = build_optimizer(model, train_config.get("optim", {}))
     scheduler = build_scheduler(optimizer, train_config.get("scheduler", {}), max_steps)
 
