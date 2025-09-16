@@ -90,9 +90,7 @@ class MultiHeadAttention(nn.Module):
                 is_causal=False,
             )
         else:
-            attn_scores = torch.matmul(q, k.transpose(-2, -1)) * (
-                1.0 / math.sqrt(self.head_dim)
-            )
+            attn_scores = torch.matmul(q, k.transpose(-2, -1)) * (1.0 / math.sqrt(self.head_dim))
             q_len = attn_scores.shape[-2]
             k_len = attn_scores.shape[-1]
 
