@@ -18,8 +18,8 @@ training:
   eval_interval: 4000
   checkpoint_interval: 4000
   gradient_clip_norm: 0.5
-  gradient_accumulation: 8
-  mixed_precision: fp32
+  gradient_accumulation: 2
+  mixed_precision: fp16
   grad_checkpointing: false
   seed: 1337
   max_steps: 100000
@@ -29,4 +29,4 @@ logging:
   log_interval: 10
   sample_interval: 5000
   output_dir: runs/pico-pretrain
-  rich_progress: true
+  rich_progress: false
