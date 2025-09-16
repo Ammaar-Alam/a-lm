@@ -29,4 +29,4 @@ logging:
   log_interval: 10
   sample_interval: 5000
   output_dir: runs/pico-pretrain
-  rich_progress: false
+  rich_progress: true
