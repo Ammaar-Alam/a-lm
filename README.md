@@ -222,6 +222,19 @@ When you scale to longer runs, update `training.max_steps`, `scheduler.max_steps
    - Supports top-k + temperature sampling; set `--top-k 0` for greedy decoding.
    - Swap prompts to gauge knowledge/fluency as training progresses.
 
+### Interactive Chat CLI
+Once you have a checkpoint, launch an interactive conversation loop:
+
+```bash
+python scripts/chat_cli.py \
+  --checkpoint runs/pico-pretrain/ckpt-last.pt \
+  --tokenizer artifacts/tokenizer.json \
+  --device auto
+```
+
+- Type into the `you>` prompt; enter `/exit` or hit `Ctrl+C` when you’re done.
+- The script keeps prior turns within the effective context window (~512 tokens with the default packed dataset). To extend chats, repack `data/packed` with a larger `--seq-len` and raise `model.max_position_embeddings` in your config before resuming training.
+
 ---
 
 ## Repository Layout
@@ -257,6 +270,7 @@ When you scale to longer runs, update `training.max_steps`, `scheduler.max_steps
 - **OOM during training:** lower `micro_batch_size`, increase `gradient_accumulation`, or reduce `--seq-len` when packing.
 - **Slow/broken run:** verify `pip install -e .[dev]` succeeded, run `make check-mps` to confirm device.
 - **Restart training:** delete or move `ckpt-last.pt` if you want a fresh start; otherwise training resumes automatically.
+- **Context length:** the pico config trains on 512-token sequences. If you need longer prompts, increase `training.seq_len`, regenerate `data/packed`, and update `model.max_position_embeddings` before resuming.
 
 ---
 
@@ -264,3 +278,10 @@ When you scale to longer runs, update `training.max_steps`, `scheduler.max_steps
 - Phase 5 (coming soon): supervised fine-tuning on chat data + DPO alignment.
 - Phase 6+: inference server (FastAPI), weight-only INT8 quantization, web chat widget.
 - Keep `TODO_LIST.md` updated as milestones close; expand this README when new CLIs/configs appear.
+
+---
+
+## Deployment & Scaling Notes
+- **Serving on the web:** The roadmap includes a FastAPI inference server (`src/alm/inference/api.py`) and a streaming widget. Host the API alongside your checkpoint, then embed the widget (or a custom frontend) on your site to relay user messages to that endpoint.
+- **Export formats:** Current checkpoints stay in PyTorch format. Phase 7 adds weight-only INT8 export paths (GGUF/Core ML) so you can ship compact artifacts for browsers or mobile.
+- **Multi-machine training:** The existing trainer is single-node. To accelerate training, mirror the repo and dataset across machines and wire up PyTorch DistributedDataParallel (via `torchrun --nproc_per_node ...`) so optimizer state stays synchronized. Until DDP support lands in-repo, avoid alternating manual runs because AdamW state diverges between hosts.
