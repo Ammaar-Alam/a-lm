@@ -155,6 +155,17 @@ Optional but helpful:
      --seq-len 512 \
      --shard-size 2048
    ```
+   UPDATED SCRIPT:
+   ```bash
+    python scripts/pack_dataset.py \
+      --tokenizer artifacts/tokenizer.json \
+      --in data/clean \
+      --out data/packed \
+      --seq-len 512 \
+      --shard-size 1000000 \
+      --workers 6 \
+      --chunk-size 1024
+    ```
    - `data/packed/` now holds `shard_*.bin` (uint32 tokens) and `metadata.json` describing seq length, shard list, and total tokens.
    - Adjust `--seq-len`/`--shard-size` to suit memory constraints.
 

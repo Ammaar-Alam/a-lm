@@ -5,7 +5,7 @@ sources:
     dataset: HuggingFaceFW/fineweb-edu
     split: train
     streaming: true
-    sample_tokens: 2000000
+    sample_tokens: 100000
     notes: "Educational slice of FineWeb; high quality web text."
   wikipedia_en:
     kind: huggingface
@@ -13,7 +13,7 @@ sources:
     config: 20231101.en
     split: train
     streaming: true
-    sample_articles: 500000
+    sample_articles: 50000
     notes: "Dump curated via HF; filter to remove tables/code in prepare_corpus.py."
   tinystories:
     kind: huggingface
