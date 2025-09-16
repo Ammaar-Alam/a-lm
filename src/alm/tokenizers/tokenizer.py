@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Sequence
 
 from .bpe_trainer import load_vocab
 from .normalizer import normalize_text
@@ -95,6 +96,9 @@ class Tokenizer:
             parts.append(byte_buffer.decode("utf-8", errors="replace"))
 
         return "".join(parts)
+
+    def encode_batch(self, texts: Sequence[str]) -> list[list[int]]:
+        return [self.encode(text) for text in texts]
 
     @classmethod
     def from_file(cls, path: Path) -> Tokenizer:

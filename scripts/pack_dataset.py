@@ -19,13 +19,28 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out", required=True, help="Directory for binary shards")
     parser.add_argument("--seq-len", type=int, default=512, help="Sequence length for packing")
     parser.add_argument(
-        "--shard-size", type=int, default=2048, help="Number of tokens per shard chunk"
+        "--shard-size",
+        type=int,
+        default=1_000_000,
+        help="Number of tokens per shard chunk (per .bin file)",
     )
     parser.add_argument("--eos", default="\n", help="EoS string appended between documents")
     parser.add_argument(
         "--no-progress",
         action="store_true",
         help="Disable live progress display",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help="Number of tokenization worker processes (default: auto)",
+    )
+    parser.add_argument(
+        "--chunk-size",
+        type=int,
+        default=512,
+        help="Documents per worker batch",
     )
     return parser.parse_args()
 
@@ -45,6 +60,8 @@ def main() -> None:
         out_dir=Path(args.out),
         eos_token=args.eos,
         show_progress=not args.no_progress,
+        workers=args.workers,
+        chunk_size=args.chunk_size,
     )
     total_shards = len(metadata["shards"])
     total_tokens = metadata["total_tokens"]
