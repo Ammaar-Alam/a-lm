@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Tuple
 
 import numpy as np
 import torch
@@ -32,9 +31,9 @@ class PackedDataset(Dataset[torch.Tensor]):
         if not shard_names:
             raise ValueError("No shards listed in metadata.json")
 
-        self.shards: List[ShardInfo] = []
-        self.memmap_arrays: List[np.memmap] = []
-        self.offsets: List[Tuple[int, int]] = []
+        self.shards: list[ShardInfo] = []
+        self.memmap_arrays: list[np.memmap] = []
+        self.offsets: list[tuple[int, int]] = []
 
         offset = 0
         for name in shard_names:
@@ -67,7 +66,7 @@ class PackedDataset(Dataset[torch.Tensor]):
         raise IndexError(idx)
 
 
-def collate_tokens(samples: List[torch.Tensor]) -> torch.Tensor:
+def collate_tokens(samples: list[torch.Tensor]) -> torch.Tensor:
     if not samples:
         raise ValueError("Empty batch provided to collate_tokens")
     return torch.stack(samples, dim=0)

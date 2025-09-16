@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterable, Iterator, Optional
 
 from datasets import load_dataset
 
@@ -13,7 +13,7 @@ from alm.tokenizers.normalizer import normalize_text
 from .config import CorpusConfig, SourceConfig
 
 
-def iter_huggingface_source(cfg: SourceConfig, cache_dir: Optional[str]) -> Iterator[str]:
+def iter_huggingface_source(cfg: SourceConfig, cache_dir: str | None) -> Iterator[str]:
     kwargs = {}
     if cfg.config:
         kwargs["name"] = cfg.config
@@ -45,7 +45,7 @@ def iter_local_file(path: Path) -> Iterator[str]:
             yield line.rstrip("\n")
 
 
-def extract_text(sample: dict) -> Optional[str]:
+def extract_text(sample: dict) -> str | None:
     if "text" in sample:
         return sample["text"]
     if "content" in sample:
@@ -58,7 +58,7 @@ def extract_text(sample: dict) -> Optional[str]:
     return None
 
 
-def prepare_source(cfg: SourceConfig, out_dir: Path, cache_dir: Optional[str] = None) -> Path:
+def prepare_source(cfg: SourceConfig, out_dir: Path, cache_dir: str | None = None) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     output_path = out_dir / f"{cfg.name}.txt"
     if cfg.kind == "huggingface":

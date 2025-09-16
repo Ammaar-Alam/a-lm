@@ -6,8 +6,9 @@ import json
 import multiprocessing as mp
 import os
 import time
+from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
-from typing import Any, Iterable, Iterator, List, Sequence
+from typing import Any
 
 import numpy as np
 
@@ -72,11 +73,11 @@ def pack_tokens(
 ) -> dict[str, Any]:
     out_dir.mkdir(parents=True, exist_ok=True)
     eos_id = tokenizer.encode(eos_token)[-1]
-    buffer: List[int] = []
-    shard: List[int] = []
+    buffer: list[int] = []
+    shard: list[int] = []
     shard_idx = 0
     total_tokens = 0
-    shard_paths: List[str] = []
+    shard_paths: list[str] = []
 
     if show_progress and Progress is None:
         print("Progress disabled: install 'rich' to enable live stats.")
