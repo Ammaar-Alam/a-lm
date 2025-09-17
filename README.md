@@ -220,14 +220,14 @@ When you scale to longer runs, update `training.max_steps`, `scheduler.max_steps
      --tokenizer artifacts/tokenizer.json \
      --jsonl data/sft/clean.jsonl \
      --out data/sft_packed \
-     --seq-len 512 \
+     --seq-len 384 \
      --shard-size 1000000 \
      --workers 6 \
      --chunk-size 64
    ```
 3. Fine-tune from your preferred pretraining checkpoint:
    ```bash
-   unset PYTORCH_MPS_FAST_MATH   # optional: keep MPS in safe mode for the first run
+   export PYTORCH_MPS_FAST_MATH=1  
    python scripts/train_sft.py \
      --model configs/pico.yaml \
      --train configs/sft.yaml \
@@ -236,6 +236,16 @@ When you scale to longer runs, update `training.max_steps`, `scheduler.max_steps
      --device auto \
      --init runs/pico-pretrain/ckpt-last.pt
    ```
+   ```bash
+   python scripts/train_sft.py \
+     --model configs/pico.yaml \
+     --train configs/sft.yaml \
+     --data data/sft_packed \
+     --out runs/pico-sft \
+     --device auto \
+     --resume runs/pico-sft/ckpt-last.pt
+   ```
+
    - Swap `--init` for `--resume runs/pico-sft/ckpt-last.pt` to continue an interrupted SFT run.
    - The loop masks user tokens, keeps FP32 loss, enables GradScaler on MPS/CUDA, and skips steps with non-finite gradients.
 4. Log qualitative changes with the checklist in `docs/sft_eval_prompts.md` so regressions are easy to spot.
@@ -265,6 +275,13 @@ python scripts/chat_cli.py \
   --checkpoint runs/pico-pretrain/ckpt-last.pt \
   --tokenizer artifacts/tokenizer.json \
   --device auto
+```
+
+```bash
+  python scripts/chat_cli.py \
+    --checkpoint runs/pico-sft/ckpt-last.pt \
+    --tokenizer artifacts/tokenizer.json \
+    --device auto
 ```
 
 - Type into the `you>` prompt; enter `/exit` or hit `Ctrl+C` when you’re done.

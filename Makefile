@@ -33,13 +33,13 @@ sft-pack:
 		--tokenizer artifacts/tokenizer.json \
 		--jsonl data/sft/clean.jsonl \
 		--out data/sft_packed \
-		--seq-len 512 \
+		--seq-len 384 \
 		--shard-size 1000000 \
 		--workers 6 \
 		--chunk-size 64
 
 sft-train:
-	unset PYTORCH_MPS_FAST_MATH || true
+	export PYTORCH_MPS_FAST_MATH=1
 	python scripts/train_sft.py \
 		--model configs/pico.yaml \
 		--train configs/sft.yaml \

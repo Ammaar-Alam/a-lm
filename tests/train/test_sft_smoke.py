@@ -38,6 +38,9 @@ def test_sft_single_step(tmp_path: Path) -> None:
         chunk_size=1,
     )
 
+    metadata = json.loads((packed_dir / "metadata.json").read_text())
+    assert metadata["dtype"] == "uint16"
+
     dataset = PackedSFTDataset(packed_dir)
     assert len(dataset) >= 1
 

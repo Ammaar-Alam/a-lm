@@ -35,12 +35,17 @@ class PackedSFTDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         if not input_files or len(input_files) != len(mask_files):
             raise ValueError("metadata.json must include matching inputs and masks")
 
+        dtype_name = str(metadata.get("dtype", "uint32")).lower()
+        if dtype_name not in {"uint16", "uint32"}:
+            raise ValueError(f"Unsupported token dtype {dtype_name}")
+        self._token_dtype = np.uint16 if dtype_name == "uint16" else np.uint32
+
         self._shards: list[_ShardInfo] = []
         self._offsets: list[tuple[int, int]] = []
         self._input_cache: OrderedDict[int, np.memmap] = OrderedDict()
         self._mask_cache: OrderedDict[int, np.memmap] = OrderedDict()
         self._max_cached = 16
-        itemsize_tokens = np.dtype(np.uint32).itemsize
+        itemsize_tokens = np.dtype(self._token_dtype).itemsize
         itemsize_masks = np.dtype(np.uint8).itemsize
 
         offset = 0
@@ -95,12 +100,14 @@ class PackedSFTDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         if idx < 0 or idx >= self.total_sequences:
             raise IndexError(idx)
         shard_index, shard, local = self._locate(idx)
-        token_array = self._get_array(self._input_cache, shard_index, shard.inputs, np.uint32)
+        token_array = self._get_array(
+            self._input_cache, shard_index, shard.inputs, self._token_dtype
+        )
         mask_array = self._get_array(self._mask_cache, shard_index, shard.masks, np.uint8)
         start = local * self.seq_len
         end = start + self.seq_len
-        tokens = np.array(token_array[start:end], dtype=np.int64)
-        mask = np.array(mask_array[start:end], dtype=np.uint8)
+        tokens = np.array(token_array[start:end], copy=True)
+        mask = np.array(mask_array[start:end], copy=False)
         token_tensor = torch.from_numpy(tokens)
-        mask_tensor = torch.from_numpy(mask.astype(np.bool_))
+        mask_tensor = torch.from_numpy(mask.astype(np.bool_, copy=False))
         return token_tensor, mask_tensor

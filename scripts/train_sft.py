@@ -97,7 +97,7 @@ def build_scheduler(
     def lr_lambda(step: int) -> float:
         step = min(step, max_steps)
         if warmup_steps > 0 and step < warmup_steps:
-            return step / max(1, warmup_steps)
+            return (step + 1) / max(1, warmup_steps)
         progress = (step - warmup_steps) / max(1, max_steps - warmup_steps)
         return 0.5 * (1.0 + math.cos(math.pi * progress))
 
@@ -189,6 +189,9 @@ def train(args: argparse.Namespace) -> None:
     model_config = load_model_config(Path(args.model))
     train_config = load_train_config(Path(args.train))
 
+    device = resolve_device(args.device)
+    torch.set_float32_matmul_precision("high")
+
     dataset = PackedSFTDataset(Path(args.data))
     training_cfg = train_config.get("training", {})
     micro_batch_size = int(training_cfg.get("micro_batch_size", 8))
@@ -197,20 +200,26 @@ def train(args: argparse.Namespace) -> None:
     grad_clip = float(training_cfg.get("gradient_clip_norm", 1.0))
     num_workers = int(training_cfg.get("dataloader_workers", 0))
 
-    dataloader = DataLoader(
-        dataset,
-        batch_size=micro_batch_size,
-        shuffle=True,
-        drop_last=True,
-        num_workers=num_workers,
-        persistent_workers=num_workers > 0,
-        pin_memory=False,
-        collate_fn=collate_batch,
-    )
+    prefetch_factor = int(training_cfg.get("prefetch_factor", 2))
+    loader_kwargs: dict[str, Any] = {
+        "dataset": dataset,
+        "batch_size": micro_batch_size,
+        "shuffle": True,
+        "drop_last": True,
+        "num_workers": num_workers,
+        "persistent_workers": num_workers > 0,
+        "pin_memory": False,
+        "collate_fn": collate_batch,
+    }
+    if num_workers > 0:
+        loader_kwargs["prefetch_factor"] = prefetch_factor
+    dataloader = DataLoader(**loader_kwargs)
+    warmup_batch: tuple[torch.Tensor, torch.Tensor] | None = None
+    try:
+        warmup_batch = next(iter(dataloader))
+    except StopIteration:
+        warmup_batch = None
     data_iter = iter(dataloader)
-
-    device = resolve_device(args.device)
-    torch.set_float32_matmul_precision("high")
 
     model = TransformerModel(model_config).to(device)
     optimizer = build_optimizer(model, train_config.get("optim", {}))
@@ -218,12 +227,15 @@ def train(args: argparse.Namespace) -> None:
     override_scheduler_lr(optimizer, scheduler, optimizer.param_groups[0]["lr"])
 
     scaler = create_scaler(device)
-    if device.type == "cuda":
-        autocast_ctx = torch.cuda.amp.autocast(device_type="cuda", dtype=torch.float16)
-    elif device.type == "mps":
-        autocast_ctx = torch.autocast(device_type="mps", dtype=torch.float16)
-    else:
-        autocast_ctx = nullcontext()
+
+    def _autocast_ctx() -> Any:
+        if device.type == "cuda":
+            return torch.cuda.amp.autocast(device_type="cuda", dtype=torch.float16)
+        if device.type == "mps":
+            return torch.autocast(device_type="mps", dtype=torch.float16)
+        return nullcontext()
+
+    autocast_ctx = _autocast_ctx()
 
     last_ckpt = output_dir / "ckpt-last.pt"
     start_step = 0
@@ -237,6 +249,13 @@ def train(args: argparse.Namespace) -> None:
         load_model_weights(Path(args.init), model)
         print(f"Loaded initial weights from {args.init}")
 
+    if warmup_batch is not None and device.type in {"mps", "cuda"}:
+        warm_tokens, _ = warmup_batch
+        warm_tokens = warm_tokens[:1, : min(128, warm_tokens.size(1))]
+        warm_tokens = warm_tokens.to(device=device, dtype=torch.long, non_blocking=False)
+        with torch.inference_mode(), _autocast_ctx():
+            model(warm_tokens[:, :-1])
+
     criterion = nn.CrossEntropyLoss(ignore_index=-100)
     model.train()
 
@@ -244,6 +263,8 @@ def train(args: argparse.Namespace) -> None:
     ema_tps: float | None = None
     step = start_step
     tokens_per_step = dataset.seq_len * micro_batch_size * grad_accum
+
+    target_frac: float | None = None
 
     try:
         while step < max_steps:
@@ -257,16 +278,17 @@ def train(args: argparse.Namespace) -> None:
                     data_iter = iter(dataloader)
                     tokens, loss_mask = next(data_iter)
 
-                tokens = tokens.to(device)
-                loss_mask = loss_mask.to(device)
-                inputs = tokens[:, :-1]
-                targets = tokens[:, 1:].clone()
+                non_blocking = num_workers > 0
+                tokens = tokens.to(device, dtype=torch.long, non_blocking=non_blocking)
+                loss_mask = loss_mask.to(device, non_blocking=non_blocking)
                 target_mask = loss_mask[:, 1:]
-                targets[~target_mask] = -100
+                inputs = tokens[:, :-1]
+                targets = tokens[:, 1:].masked_fill(~target_mask, -100)
+                target_frac = float(target_mask.sum()) / max(1, target_mask.numel())
 
                 with autocast_ctx:
                     logits, _, _ = model(inputs)
-                loss = criterion(logits.float().reshape(-1, logits.size(-1)), targets.reshape(-1))
+                loss = criterion(logits.float().view(-1, logits.size(-1)), targets.view(-1))
                 loss = loss / grad_accum
 
                 if scaler and scaler.is_enabled():
@@ -293,7 +315,7 @@ def train(args: argparse.Namespace) -> None:
                 scaler.update()
             else:
                 optimizer.step()
-            scheduler.step(step)
+            scheduler.step()
             step += 1
 
             iter_time = max(time.perf_counter() - iter_start, 1e-6)
@@ -306,9 +328,12 @@ def train(args: argparse.Namespace) -> None:
                 step % int(train_config.get("logging", {}).get("log_interval", 10)) == 0
                 or step == start_step + 1
             ):
-                print(
-                    f"step={step}/{max_steps} loss={ema_loss:.4f} lr={lr:.3e} tok/s={ema_tps:.0f}"
+                extra = f" mask={target_frac:.2f}" if target_frac is not None else ""
+                message = (
+                    f"step={step}/{max_steps} loss={ema_loss:.4f} "
+                    f"lr={lr:.3e} tok/s={ema_tps:.0f}{extra}"
                 )
+                print(message)
 
             ckpt_interval = int(training_cfg.get("checkpoint_interval", 1000))
             if step % ckpt_interval == 0 or step == max_steps:

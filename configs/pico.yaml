@@ -18,3 +18,4 @@ model:
 attention:
   type: gqa
   rope_scaling: null
+  backend: sdpa

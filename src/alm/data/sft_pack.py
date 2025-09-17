@@ -108,6 +108,7 @@ def pack_sft(
     mask_buffer: list[int] = []
     input_paths: list[str] = []
     mask_paths: list[str] = []
+    token_dtype = np.uint16 if tokenizer.vocab_size <= 65535 else np.uint32
 
     if workers is None:
         workers = min(os.cpu_count() or 1, 6)
@@ -138,7 +139,7 @@ def pack_sft(
         nonlocal token_buffer, mask_buffer, shard_idx
         if not token_buffer:
             return
-        inputs = np.array(token_buffer, dtype=np.uint32)
+        inputs = np.array(token_buffer, dtype=token_dtype)
         masks = np.array(mask_buffer, dtype=np.uint8)
         input_path = out_dir / f"inputs_{shard_idx:05d}.bin"
         mask_path = out_dir / f"mask_{shard_idx:05d}.bin"
@@ -205,6 +206,7 @@ def pack_sft(
         "total_tokens": total_tokens,
         "inputs": input_paths,
         "masks": mask_paths,
+        "dtype": np.dtype(token_dtype).name,
     }
     (out_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
     return metadata
