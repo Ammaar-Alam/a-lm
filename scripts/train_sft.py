@@ -114,7 +114,10 @@ def override_scheduler_lr(
             group["lr"] = base_lr
         return
     try:
-        factor = float(scheduler.lr_lambdas[0](scheduler.last_epoch))
+        if scheduler.last_epoch < 0:
+            factor = 1.0
+        else:
+            factor = float(scheduler.lr_lambdas[0](scheduler.last_epoch))
     except Exception:  # pragma: no cover - defensive
         factor = 1.0
     desired_lr = base_lr * factor
@@ -164,7 +167,9 @@ def load_model_weights(path: Path, model: nn.Module) -> None:
     model.load_state_dict(state)
 
 
-def collate_batch(batch: list[tuple[torch.Tensor, torch.Tensor]]) -> tuple[torch.Tensor, torch.Tensor]:
+def collate_batch(
+    batch: list[tuple[torch.Tensor, torch.Tensor]],
+) -> tuple[torch.Tensor, torch.Tensor]:
     tokens = torch.stack([item[0] for item in batch], dim=0)
     mask = torch.stack([item[1] for item in batch], dim=0)
     return tokens, mask
@@ -273,7 +278,9 @@ def train(args: argparse.Namespace) -> None:
 
             if scaler and scaler.is_enabled():
                 scaler.unscale_(optimizer)
-            total_norm = nn.utils.clip_grad_norm_(model.parameters(), grad_clip, error_if_nonfinite=False)
+            total_norm = nn.utils.clip_grad_norm_(
+                model.parameters(), grad_clip, error_if_nonfinite=False
+            )
             if not torch.isfinite(total_norm):
                 print("Non-finite grad norm detected; skipping step")
                 optimizer.zero_grad(set_to_none=True)
@@ -286,7 +293,7 @@ def train(args: argparse.Namespace) -> None:
                 scaler.update()
             else:
                 optimizer.step()
-            scheduler.step()
+            scheduler.step(step)
             step += 1
 
             iter_time = max(time.perf_counter() - iter_start, 1e-6)
@@ -295,20 +302,37 @@ def train(args: argparse.Namespace) -> None:
             ema_tps = tokens_per_sec if ema_tps is None else 0.9 * ema_tps + 0.1 * tokens_per_sec
             lr = optimizer.param_groups[0]["lr"]
 
-            if step % int(train_config.get("logging", {}).get("log_interval", 10)) == 0 or step == start_step + 1:
+            if (
+                step % int(train_config.get("logging", {}).get("log_interval", 10)) == 0
+                or step == start_step + 1
+            ):
                 print(
                     f"step={step}/{max_steps} loss={ema_loss:.4f} lr={lr:.3e} tok/s={ema_tps:.0f}"
                 )
 
             ckpt_interval = int(training_cfg.get("checkpoint_interval", 1000))
             if step % ckpt_interval == 0 or step == max_steps:
-                save_checkpoint(output_dir / f"ckpt-step{step:06d}.pt", model, optimizer, scheduler, step, model_config)
+                save_checkpoint(
+                    output_dir / f"ckpt-step{step:06d}.pt",
+                    model,
+                    optimizer,
+                    scheduler,
+                    step,
+                    model_config,
+                )
                 save_checkpoint(last_ckpt, model, optimizer, scheduler, step, model_config)
                 print(f"Checkpoint saved at step {step}")
 
     except KeyboardInterrupt:
         print("Training interrupted, saving checkpoint...")
-        save_checkpoint(output_dir / f"ckpt-step{step:06d}-interrupt.pt", model, optimizer, scheduler, step, model_config)
+        save_checkpoint(
+            output_dir / f"ckpt-step{step:06d}-interrupt.pt",
+            model,
+            optimizer,
+            scheduler,
+            step,
+            model_config,
+        )
         save_checkpoint(last_ckpt, model, optimizer, scheduler, step, model_config)
 
 

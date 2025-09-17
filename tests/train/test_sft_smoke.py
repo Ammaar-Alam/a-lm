@@ -1,11 +1,11 @@
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
-import json
 import yaml
 
-from alm.data.sft_pack import iter_conversations, pack_sft
 from alm.data.sft_dataset import PackedSFTDataset
+from alm.data.sft_pack import iter_conversations, pack_sft
 from alm.tokenizers import Tokenizer, Vocabulary
 from scripts import train_sft
 

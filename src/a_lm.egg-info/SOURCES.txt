@@ -12,6 +12,8 @@ src/alm/data/config.py
 src/alm/data/dataset.py
 src/alm/data/pack.py
 src/alm/data/prepare.py
+src/alm/data/sft_dataset.py
+src/alm/data/sft_pack.py
 src/alm/eval/__init__.py
 src/alm/inference/__init__.py
 src/alm/model/__init__.py

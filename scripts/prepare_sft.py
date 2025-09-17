@@ -32,10 +32,23 @@ def write_jsonl(path: Path, records: Iterable[Conversation]) -> None:
 
 
 def iter_ultrachat(split: str, limit: int | None) -> Iterator[Conversation]:
-    dataset = load_dataset("HuggingFaceH4/ultrachat_200k", split=split, streaming=True)
+    try:
+        dataset = load_dataset("HuggingFaceH4/ultrachat_200k", split=split, streaming=True)
+    except ValueError as error:
+        if split != "train_sft":
+            dataset = load_dataset(
+                "HuggingFaceH4/ultrachat_200k", split="train_sft", streaming=True
+            )
+        else:  # pragma: no cover - defensive fallback
+            raise error
     count = 0
     for sample in dataset:
-        messages = sample.get("messages") or sample.get("conversation") or sample.get("conversations") or []
+        messages = (
+            sample.get("messages")
+            or sample.get("conversation")
+            or sample.get("conversations")
+            or []
+        )
         turns: list[Turn] = []
         for message in messages:
             role = str(message.get("role") or message.get("from") or "").lower()
@@ -91,16 +104,29 @@ def iter_dolly(split: str, limit: int | None) -> Iterator[Conversation]:
             return
 
 
+def resolve_split(dataset: str, split: str | None) -> str:
+    if not split or split.lower() == "auto":
+        defaults = {
+            "oasst1": "train",
+            "ultrachat": "train_sft",
+            "dolly": "train",
+        }
+        return defaults.get(dataset, "train")
+    if dataset == "ultrachat" and split == "train":
+        return "train_sft"
+    return split
+
+
 def build_conversations(args: argparse.Namespace) -> Iterator[Conversation]:
     include = {choice.lower() for choice in args.include}
     limit = args.max_per_source
     split = args.split
     if "oasst1" in include:
-        yield from iter_oasst(split, limit)
+        yield from iter_oasst(resolve_split("oasst1", split), limit)
     if "ultrachat" in include:
-        yield from iter_ultrachat(split, limit)
+        yield from iter_ultrachat(resolve_split("ultrachat", split), limit)
     if "dolly" in include:
-        yield from iter_dolly(split, limit)
+        yield from iter_dolly(resolve_split("dolly", split), limit)
 
 
 def parse_args() -> argparse.Namespace:
@@ -112,7 +138,11 @@ def parse_args() -> argparse.Namespace:
         default=["oasst1", "ultrachat", "dolly"],
         help="Datasets to include (oasst1, ultrachat, dolly)",
     )
-    parser.add_argument("--split", default="train", help="Dataset split (default: train)")
+    parser.add_argument(
+        "--split",
+        default="auto",
+        help="Dataset split (default: auto; picks best-known split per dataset)",
+    )
     parser.add_argument(
         "--max-per-source",
         type=int,

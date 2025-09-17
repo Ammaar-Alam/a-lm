@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections import OrderedDict
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -86,10 +87,8 @@ class PackedSFTDataset(Dataset[tuple[torch.Tensor, torch.Tensor]]):
         cache.move_to_end(shard_index)
         while len(cache) > self._max_cached:
             old_index, old_array = cache.popitem(last=False)
-            try:
+            with suppress(AttributeError):
                 old_array._mmap.close()  # type: ignore[attr-defined]
-            except AttributeError:
-                pass
         return array
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
