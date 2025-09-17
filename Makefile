@@ -1,7 +1,7 @@
 PYTHON ?= python3
 PIP ?= $(PYTHON) -m pip
 
-.PHONY: dev install lint format test clean check-mps train-pico
+.PHONY: dev install lint format test clean check-mps train-pico sft-prepare sft-pack sft-train
 
 dev: install
 	pre-commit install
@@ -24,6 +24,29 @@ check-mps:
 
 train-pico:
 	@echo "Training scripts not yet implemented. See TODO_LIST.md for roadmap."
+
+sft-prepare:
+	python scripts/prepare_sft.py --out data/sft/clean.jsonl
+
+sft-pack:
+	python scripts/pack_sft.py \
+		--tokenizer artifacts/tokenizer.json \
+		--jsonl data/sft/clean.jsonl \
+		--out data/sft_packed \
+		--seq-len 512 \
+		--shard-size 1000000 \
+		--workers 6 \
+		--chunk-size 64
+
+sft-train:
+	unset PYTORCH_MPS_FAST_MATH || true
+	python scripts/train_sft.py \
+		--model configs/pico.yaml \
+		--train configs/sft.yaml \
+		--data data/sft_packed \
+		--out runs/pico-sft \
+		--device auto \
+		--init runs/pico-pretrain/ckpt-last.pt
 
 clean:
 	rm -rf __pycache__ src/**/__pycache__ tests/__pycache__ .pytest_cache .mypy_cache .ruff_cache htmlcov .coverage

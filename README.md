@@ -14,10 +14,11 @@
 7. [Token Packing](#token-packing)
 8. [Pretraining Loop](#pretraining-loop)
 9. [Sampling From Checkpoints](#sampling-from-checkpoints)
-10. [Repository Layout](#repository-layout)
-11. [Testing & Linting](#testing--linting)
-12. [Troubleshooting](#troubleshooting)
-13. [Next Steps](#next-steps)
+10. [Supervised Fine-Tuning](#supervised-fine-tuning)
+11. [Repository Layout](#repository-layout)
+12. [Testing & Linting](#testing--linting)
+13. [Troubleshooting](#troubleshooting)
+14. [Next Steps](#next-steps)
 
 ---
 
@@ -204,6 +205,40 @@ The training CLI reads hyperparameters from `configs/train.yaml`. Adjust these k
 | | `rich_progress` | Enables/disables the Rich progress bar. Set to `false` for minimal logging environments. |
 
 When you scale to longer runs, update `training.max_steps`, `scheduler.max_steps`, and (optionally) `checkpoint_interval` together to keep the cosine schedule and checkpoint cadence consistent. If you bump `seq_len`, remember to regenerate the packed dataset at the new length.
+
+---
+
+## Supervised Fine-Tuning
+1. Prepare instruction/chat conversations (defaults: OpenAssistant OASST1, Ultrachat, Dolly):
+   ```bash
+   python scripts/prepare_sft.py --out data/sft/clean.jsonl
+   ```
+   - Use `--include` or `--max-per-source` to curate the mix without editing the script.
+2. Pack the conversations into token + loss-mask shards:
+   ```bash
+   python scripts/pack_sft.py \
+     --tokenizer artifacts/tokenizer.json \
+     --jsonl data/sft/clean.jsonl \
+     --out data/sft_packed \
+     --seq-len 512 \
+     --shard-size 1000000 \
+     --workers 6 \
+     --chunk-size 64
+   ```
+3. Fine-tune from your preferred pretraining checkpoint:
+   ```bash
+   unset PYTORCH_MPS_FAST_MATH   # optional: keep MPS in safe mode for the first run
+   python scripts/train_sft.py \
+     --model configs/pico.yaml \
+     --train configs/sft.yaml \
+     --data data/sft_packed \
+     --out runs/pico-sft \
+     --device auto \
+     --init runs/pico-pretrain/ckpt-last.pt
+   ```
+   - Swap `--init` for `--resume runs/pico-sft/ckpt-last.pt` to continue an interrupted SFT run.
+   - The loop masks user tokens, keeps FP32 loss, enables GradScaler on MPS/CUDA, and skips steps with non-finite gradients.
+4. Log qualitative changes with the checklist in `docs/sft_eval_prompts.md` so regressions are easy to spot.
 
 ---
 
