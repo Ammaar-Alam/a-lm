@@ -94,7 +94,7 @@ def build_prompt(history: list[tuple[str, str]], user_message: str) -> str:
     for role, content in history:
         parts.append(f"{role}: {content.strip()}")
     parts.append(f"User: {user_message.strip()}")
-    parts.append("Assistant:")
+    parts.append("Assistant: ")
     return "\n".join(parts)
 
 
