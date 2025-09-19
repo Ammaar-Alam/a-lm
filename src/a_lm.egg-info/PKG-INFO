@@ -182,20 +182,22 @@ Optional but helpful:
      --train configs/train.yaml \
      --data data/packed \
      --out runs/pico-pretrain \
-     --device auto
+      --device auto \
+      --tokenizer artifacts/tokenizer.json
    ```
    - Checkpoints land in `runs/pico-pretrain/` (`ckpt-stepXXXXXX.pt`, `ckpt-last.pt`).
    - Press `Ctrl+C` any time; the loop saves both `ckpt-last.pt` and an interrupt-tagged checkpoint before exiting.
    - Resume later with:
      ```bash
-     export PYTORCH_MPS_FAST_MATH=1
-     python scripts/train_pretrain.py \
-       --model configs/pico.yaml \
-       --train configs/train.yaml \
-       --data data/packed \
-       --out runs/pico-pretrain \
-       --device auto \
-       --resume runs/pico-pretrain/ckpt-last.pt
+    export PYTORCH_MPS_FAST_MATH=1
+    python scripts/train_pretrain.py \
+      --model configs/pico.yaml \
+      --train configs/train.yaml \
+      --data data/packed \
+      --out runs/pico-pretrain \
+      --device auto \
+      --resume runs/pico-pretrain/ckpt-last.pt \
+      --tokenizer artifacts/tokenizer.json
      ```
    - Want different hyperparameters? Edit `configs/train.yaml` (batch size, accumulation, warmup, scheduler horizon, checkpoint cadence, DataLoader workers).
 
@@ -264,23 +266,26 @@ When you scale to longer runs, update `training.max_steps`, `scheduler.max_steps
    ```
 3. Fine-tune from your preferred pretraining checkpoint:
    ```bash
-   export PYTORCH_MPS_FAST_MATH=1  
-   python scripts/train_sft.py \
-     --model configs/pico.yaml \
-     --train configs/sft.yaml \
-     --data data/sft_packed \
-     --out runs/pico-sft \
-     --device auto \
-     --init runs/pico-pretrain/ckpt-last.pt
+  export PYTORCH_MPS_FAST_MATH=1  
+  python scripts/train_sft.py \
+    --model configs/pico.yaml \
+    --train configs/sft.yaml \
+    --data data/sft_packed \
+    --out runs/pico-sft \
+    --device auto \
+    --init runs/pico-pretrain/ckpt-last.pt \
+    --tokenizer artifacts/tokenizer.json
    ```
    ```bash
-   python scripts/train_sft.py \
-     --model configs/pico.yaml \
-     --train configs/sft.yaml \
-     --data data/sft_packed \
-     --out runs/pico-sft \
-     --device auto \
-     --resume runs/pico-sft/ckpt-last.pt
+  export PYTORCH_MPS_FAST_MATH=1  
+  python scripts/train_sft.py \
+    --model configs/pico.yaml \
+    --train configs/sft.yaml \
+    --data data/sft_packed \
+    --out runs/pico-sft \
+    --device auto \
+    --resume runs/pico-sft/ckpt-last.pt \
+    --tokenizer artifacts/tokenizer.json
    ```
 
    - Swap `--init` for `--resume runs/pico-sft/ckpt-last.pt` to continue an interrupted SFT run.
@@ -311,14 +316,22 @@ Once you have a checkpoint, launch an interactive conversation loop:
 python scripts/chat_cli.py \
   --checkpoint runs/pico-pretrain/ckpt-last.pt \
   --tokenizer artifacts/tokenizer.json \
-  --device auto
+  --device auto \
+  --temperature 0.7 \
+  --top-k 40 \
+  --top-p 0.95 \
+  --repetition-penalty 1.1
 ```
 
 ```bash
   python scripts/chat_cli.py \
     --checkpoint runs/pico-sft/ckpt-last.pt \
     --tokenizer artifacts/tokenizer.json \
-    --device auto
+    --device auto \
+    --temperature 0.7 \
+    --top-k 40 \
+    --top-p 0.95 \
+    --repetition-penalty 1.1
 ```
 
 - Type into the `you>` prompt; enter `/exit` or hit `Ctrl+C` when you’re done.

@@ -7,6 +7,9 @@ import json
 from collections.abc import Iterable
 from pathlib import Path
 
+import random
+from typing import Sequence
+
 from .normalizer import normalize_text
 from .vocab import Vocabulary
 
@@ -39,11 +42,24 @@ def merge_vocab(tokens: Iterable[list[str]], pair: Pair) -> list[list[str]]:
     return merged
 
 
-def train_bpe(corpus: Iterable[str], vocab_size: int) -> Vocabulary:
+def train_bpe(
+    corpus: Iterable[str],
+    vocab_size: int,
+    *,
+    log_interval: int | None = None,
+) -> Vocabulary:
     vocab = Vocabulary.byte_fallback()
-    tokens = [[ch for ch in normalize_text(word)] for line in corpus for word in line.split()]
+    tokens = [[ch for ch in normalize_text(line)] for line in corpus]
     if not tokens:
         return vocab
+
+    base_size = len(vocab)
+    merges_target = max(vocab_size - base_size, 0)
+    if log_interval and log_interval > 0:
+        print(
+            f"[tokenizer] starting BPE merges: target={merges_target:,} vocab_size={vocab_size}",
+            flush=True,
+        )
 
     while len(vocab) < vocab_size:
         stats = get_stats(tokens)
@@ -53,6 +69,20 @@ def train_bpe(corpus: Iterable[str], vocab_size: int) -> Vocabulary:
         merged_token = "".join(best_pair)
         vocab.add(merged_token)
         tokens = merge_vocab(tokens, best_pair)
+
+        merges_done = len(vocab) - base_size
+        if log_interval and log_interval > 0:
+            if merges_done == 1 or merges_done % log_interval == 0 or len(vocab) == vocab_size:
+                print(
+                    f"[tokenizer] merges={merges_done:,}/{merges_target:,} pair={best_pair[0]!r}+{best_pair[1]!r} freq={stats[best_pair]:,}",
+                    flush=True,
+                )
+
+    if log_interval and log_interval > 0:
+        print(
+            f"[tokenizer] finished training vocab of size {len(vocab):,}",
+            flush=True,
+        )
     return vocab
 
 
@@ -69,15 +99,73 @@ def load_vocab(path: Path) -> Vocabulary:
     return vocab
 
 
-def train_from_files(files: list[Path], vocab_size: int) -> Vocabulary:
-    def iter_corpus() -> Iterable[str]:
-        for file in files:
-            yield from Path(file).read_text(encoding="utf-8").splitlines()
+def train_from_files(
+    files: Sequence[Path],
+    vocab_size: int,
+    *,
+    max_lines: int | None = None,
+    sample_ratio: float | None = None,
+    log_interval: int | None = None,
+    seed: int = 1337,
+) -> Vocabulary:
+    rng = random.Random(seed)
+    selected: list[str] = []
+    total_lines = 0
+    cap = max_lines if max_lines and max_lines > 0 else None
 
-    return train_bpe(iter_corpus(), vocab_size)
+    for file in files:
+        with Path(file).open("r", encoding="utf-8") as handle:
+            for raw_line in handle:
+                line = raw_line.rstrip("\n")
+                total_lines += 1
+
+                if sample_ratio is not None and 0.0 < sample_ratio < 1.0:
+                    if rng.random() > sample_ratio:
+                        continue
+
+                if cap is None:
+                    selected.append(line)
+                else:
+                    if len(selected) < cap:
+                        selected.append(line)
+                    else:
+                        j = rng.randint(0, total_lines - 1)
+                        if j < cap:
+                            selected[j] = line
+
+        kept = len(selected) if cap is None else min(len(selected), cap)
+        print(
+            f"[tokenizer] scanned {total_lines:,} lines, keeping {kept:,} (file={file.name})",
+            flush=True,
+        )
+
+        if cap is not None and len(selected) >= cap:
+            continue
+
+    if not selected:
+        print("[tokenizer] no lines selected; emitting byte fallback vocabulary", flush=True)
+        return Vocabulary.byte_fallback()
+
+    return train_bpe(selected, vocab_size, log_interval=log_interval)
 
 
-def cli_train_tokenizer(input_paths: list[str], vocab_size: int, output_path: str) -> None:
+def cli_train_tokenizer(
+    input_paths: list[str],
+    vocab_size: int,
+    output_path: str,
+    *,
+    max_lines: int | None = None,
+    sample_ratio: float | None = None,
+    log_interval: int | None = None,
+    seed: int = 1337,
+) -> None:
     files = [Path(p) for p in input_paths]
-    vocab = train_from_files(files, vocab_size)
+    vocab = train_from_files(
+        files,
+        vocab_size,
+        max_lines=max_lines,
+        sample_ratio=sample_ratio,
+        log_interval=log_interval,
+        seed=seed,
+    )
     save_vocab(vocab, Path(output_path))

@@ -29,6 +29,7 @@ class PackedDataset(Dataset[torch.Tensor]):
             raise FileNotFoundError(f"metadata.json not found in {root}")
         metadata = json.loads(metadata_path.read_text())
         self.seq_len = int(metadata["seq_len"])
+        self.tokenizer_fingerprint = metadata.get("tokenizer_fingerprint")
         shard_names = metadata.get("shards", [])
         if not shard_names:
             raise ValueError("No shards listed in metadata.json")

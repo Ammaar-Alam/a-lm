@@ -46,7 +46,8 @@ sft-train:
 		--data data/sft_packed \
 		--out runs/pico-sft \
 		--device auto \
-		--init runs/pico-pretrain/ckpt-last.pt
+		--init runs/pico-pretrain/ckpt-last.pt \
+		--tokenizer artifacts/tokenizer.json
 
 clean:
 	rm -rf __pycache__ src/**/__pycache__ tests/__pycache__ .pytest_cache .mypy_cache .ruff_cache htmlcov .coverage

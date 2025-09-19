@@ -19,6 +19,7 @@ from torch.utils.data import DataLoader
 from alm.data.sft_dataset import PackedSFTDataset
 from alm.model.config import DualFFNConfig, ModelConfig
 from alm.model.transformer import TransformerModel
+from alm.tokenizers import Tokenizer
 
 
 def resolve_device(name: str | None) -> torch.device:
@@ -135,6 +136,7 @@ def save_checkpoint(
     scheduler: torch.optim.lr_scheduler._LRScheduler,
     step: int,
     config: ModelConfig,
+    tokenizer_fingerprint: str | None,
 ) -> None:
     payload = {
         "model": model.state_dict(),
@@ -143,6 +145,8 @@ def save_checkpoint(
         "step": step,
         "config": dataclasses.asdict(config),
     }
+    if tokenizer_fingerprint:
+        payload["tokenizer_fingerprint"] = tokenizer_fingerprint
     torch.save(payload, path)
 
 
@@ -151,12 +155,12 @@ def load_checkpoint(
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
     scheduler: torch.optim.lr_scheduler._LRScheduler,
-) -> int:
+) -> tuple[int, str | None]:
     payload = torch.load(path, map_location="cpu")
     model.load_state_dict(payload["model"])
     optimizer.load_state_dict(payload["optimizer"])
     scheduler.load_state_dict(payload["scheduler"])
-    return int(payload.get("step", 0))
+    return int(payload.get("step", 0)), payload.get("tokenizer_fingerprint")
 
 
 def load_model_weights(path: Path, model: nn.Module) -> None:
@@ -200,6 +204,21 @@ def train(args: argparse.Namespace) -> None:
     grad_clip = float(training_cfg.get("gradient_clip_norm", 1.0))
     num_workers = int(training_cfg.get("dataloader_workers", 0))
 
+    dataset_fingerprint = dataset.tokenizer_fingerprint
+    if dataset.tokenizer_fingerprint:
+        if not args.tokenizer:
+            raise ValueError(
+                "Packed dataset encodes tokenizer fingerprint; "
+                "provide --tokenizer to verify compatibility."
+            )
+        current_fp = Tokenizer.from_file(Path(args.tokenizer)).fingerprint
+        if current_fp != dataset.tokenizer_fingerprint:
+            raise ValueError(
+                "Tokenizer fingerprint mismatch between dataset and current tokenizer"
+            )
+    elif args.tokenizer:
+        dataset_fingerprint = Tokenizer.from_file(Path(args.tokenizer)).fingerprint
+
     prefetch_factor = int(training_cfg.get("prefetch_factor", 2))
     loader_kwargs: dict[str, Any] = {
         "dataset": dataset,
@@ -222,11 +241,14 @@ def train(args: argparse.Namespace) -> None:
     data_iter = iter(dataloader)
 
     model = TransformerModel(model_config).to(device)
-    optimizer = build_optimizer(model, train_config.get("optim", {}))
-    scheduler = build_scheduler(optimizer, train_config.get("scheduler", {}), max_steps)
-    override_scheduler_lr(optimizer, scheduler, optimizer.param_groups[0]["lr"])
+    optim_cfg = train_config.get("optim", {})
+    scheduler_cfg = train_config.get("scheduler", {})
+    optimizer = build_optimizer(model, optim_cfg)
+    scheduler = build_scheduler(optimizer, scheduler_cfg, max_steps)
 
     scaler = create_scaler(device)
+    if device.type == "mps" and scaler and scaler.is_enabled():
+        scaler = torch.amp.GradScaler(device.type, enabled=False)
 
     def _autocast_ctx() -> Any:
         if device.type == "cuda":
@@ -239,15 +261,32 @@ def train(args: argparse.Namespace) -> None:
 
     last_ckpt = output_dir / "ckpt-last.pt"
     start_step = 0
+    checkpoint_fp: str | None = None
     if args.resume and Path(args.resume).exists():
-        start_step = load_checkpoint(Path(args.resume), model, optimizer, scheduler)
+        start_step, checkpoint_fp = load_checkpoint(
+            Path(args.resume), model, optimizer, scheduler
+        )
         print(f"Resumed from {args.resume} @ step {start_step}")
     elif last_ckpt.exists():
-        start_step = load_checkpoint(last_ckpt, model, optimizer, scheduler)
+        start_step, checkpoint_fp = load_checkpoint(last_ckpt, model, optimizer, scheduler)
         print(f"Resumed from {last_ckpt} @ step {start_step}")
     elif args.init:
         load_model_weights(Path(args.init), model)
         print(f"Loaded initial weights from {args.init}")
+
+    if checkpoint_fp and dataset_fingerprint and checkpoint_fp != dataset_fingerprint:
+        raise ValueError(
+            "Checkpoint tokenizer fingerprint does not match dataset/tokenizer fingerprint"
+        )
+
+    base_lr = _as_float(optim_cfg.get("lr", 5e-5), 5e-5)
+    override_scheduler_lr(optimizer, scheduler, base_lr)
+    print(
+        f"[lr] base={base_lr:.2e} last_epoch={scheduler.last_epoch} "
+        f"group_lrs={[group['lr'] for group in optimizer.param_groups]}"
+    )
+
+    tokenizer_fingerprint = dataset_fingerprint
 
     if warmup_batch is not None and device.type in {"mps", "cuda"}:
         warm_tokens, _ = warmup_batch
@@ -256,7 +295,7 @@ def train(args: argparse.Namespace) -> None:
         with torch.inference_mode(), _autocast_ctx():
             model(warm_tokens[:, :-1])
 
-    criterion = nn.CrossEntropyLoss(ignore_index=-100)
+    criterion = nn.CrossEntropyLoss(ignore_index=-100, label_smoothing=0.05)
     model.train()
 
     ema_loss: float | None = None
@@ -288,7 +327,8 @@ def train(args: argparse.Namespace) -> None:
 
                 with autocast_ctx:
                     logits, _, _ = model(inputs)
-                loss = criterion(logits.float().view(-1, logits.size(-1)), targets.view(-1))
+                safe_logits = logits.float().clamp_(-30, 30)
+                loss = criterion(safe_logits.view(-1, logits.size(-1)), targets.view(-1))
                 loss = loss / grad_accum
 
                 if scaler and scaler.is_enabled():
@@ -344,8 +384,17 @@ def train(args: argparse.Namespace) -> None:
                     scheduler,
                     step,
                     model_config,
+                    tokenizer_fingerprint,
                 )
-                save_checkpoint(last_ckpt, model, optimizer, scheduler, step, model_config)
+                save_checkpoint(
+                    last_ckpt,
+                    model,
+                    optimizer,
+                    scheduler,
+                    step,
+                    model_config,
+                    tokenizer_fingerprint,
+                )
                 print(f"Checkpoint saved at step {step}")
 
     except KeyboardInterrupt:
@@ -357,8 +406,17 @@ def train(args: argparse.Namespace) -> None:
             scheduler,
             step,
             model_config,
+            tokenizer_fingerprint,
         )
-        save_checkpoint(last_ckpt, model, optimizer, scheduler, step, model_config)
+        save_checkpoint(
+            last_ckpt,
+            model,
+            optimizer,
+            scheduler,
+            step,
+            model_config,
+            tokenizer_fingerprint,
+        )
 
 
 def parse_args() -> argparse.Namespace:
@@ -370,6 +428,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="auto", help="Device to train on (auto/mps/cuda/cpu)")
     parser.add_argument("--resume", help="Checkpoint path to resume SFT training")
     parser.add_argument("--init", help="Checkpoint providing initial model weights")
+    parser.add_argument("--tokenizer", help="Tokenizer JSON path for fingerprint validation")
     return parser.parse_args()
 
 

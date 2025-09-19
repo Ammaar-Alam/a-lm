@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
+import hashlib
+
 from .bpe_trainer import load_vocab
 from .normalizer import normalize_text
 from .vocab import Vocabulary
@@ -40,6 +42,11 @@ class Tokenizer:
     @property
     def vocab_size(self) -> int:
         return len(self.vocab)
+
+    @property
+    def fingerprint(self) -> str:
+        joined = "\n".join(self.vocab.id_to_token).encode("utf-8")
+        return hashlib.sha256(joined).hexdigest()
 
     def encode(self, text: str) -> list[int]:
         normalized = normalize_text(text)

@@ -207,6 +207,7 @@ def pack_sft(
         "inputs": input_paths,
         "masks": mask_paths,
         "dtype": np.dtype(token_dtype).name,
+        "tokenizer_fingerprint": tokenizer.fingerprint,
     }
     (out_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
     return metadata

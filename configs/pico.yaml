@@ -11,7 +11,7 @@ model:
   alibi: false
   dropout: 0.0
   dual_ffn:
-    enabled: true
+    enabled: false
     router_temperature: 1.0
     capacity_factor: 1.0
     drop_tokens: false

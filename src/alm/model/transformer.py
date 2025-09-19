@@ -89,6 +89,7 @@ class TransformerModel(nn.Module):
         self.layers = nn.ModuleList([TransformerLayer(config) for _ in range(config.n_layers)])
         self.final_norm = RMSNorm(config.d_model)
         self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
+        self.lm_head.weight = self.embed_tokens.weight
         self.gradient_checkpointing = False
 
     def enable_gradient_checkpointing(self) -> None:

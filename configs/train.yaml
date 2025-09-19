@@ -16,7 +16,7 @@ training:
   global_batch_size: 64
   seq_len: 512
   eval_interval: 4000
-  checkpoint_interval: 4000
+  checkpoint_interval: 250
   gradient_clip_norm: 0.5
   gradient_accumulation: 2
   mixed_precision: fp16

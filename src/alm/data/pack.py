@@ -186,6 +186,7 @@ def pack_tokens(
         "shards": shard_paths,
         "workers": workers,
         "chunk_size": chunk_size,
+        "tokenizer_fingerprint": tokenizer.fingerprint,
     }
     (out_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
     return metadata

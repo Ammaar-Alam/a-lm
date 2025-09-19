@@ -4,15 +4,17 @@ from types import SimpleNamespace
 import yaml
 
 from alm.data.pack import iter_text_files, pack_tokens
-from alm.tokenizers import Tokenizer, Vocabulary
+from alm.tokenizers import Tokenizer, Vocabulary, save_vocab
 from scripts import train_pretrain
 
 
-def create_packed_dataset(tmp_path: Path) -> Path:
+def create_packed_dataset(tmp_path: Path) -> tuple[Path, Path]:
     text_dir = tmp_path / "clean"
     text_dir.mkdir()
     (text_dir / "sample.txt").write_text("hello world\nhello again\n", encoding="utf-8")
     tokenizer = Tokenizer(Vocabulary.byte_fallback())
+    tok_path = tmp_path / "tok.json"
+    save_vocab(tokenizer.vocab, tok_path)
     packed_dir = tmp_path / "packed"
     pack_tokens(
         tokenizer,
@@ -22,7 +24,7 @@ def create_packed_dataset(tmp_path: Path) -> Path:
         out_dir=packed_dir,
         eos_token="\n",
     )
-    return packed_dir
+    return packed_dir, tok_path
 
 
 def write_yaml(path: Path, data: dict) -> Path:
@@ -31,7 +33,7 @@ def write_yaml(path: Path, data: dict) -> Path:
 
 
 def test_train_single_step(tmp_path: Path, monkeypatch) -> None:
-    data_dir = create_packed_dataset(tmp_path)
+    data_dir, tok_path = create_packed_dataset(tmp_path)
     model_cfg = {
         "model": {
             "d_model": 16,
@@ -70,6 +72,7 @@ def test_train_single_step(tmp_path: Path, monkeypatch) -> None:
         out=str(out_dir),
         device="cpu",
         resume=None,
+        tokenizer=str(tok_path),
     )
     train_pretrain.train(args)
     assert (out_dir / "ckpt-last.pt").exists()

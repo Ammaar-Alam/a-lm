@@ -6,7 +6,7 @@ import yaml
 
 from alm.data.sft_dataset import PackedSFTDataset
 from alm.data.sft_pack import iter_conversations, pack_sft
-from alm.tokenizers import Tokenizer, Vocabulary
+from alm.tokenizers import Tokenizer, Vocabulary, save_vocab
 from scripts import train_sft
 
 
@@ -26,6 +26,8 @@ def test_sft_single_step(tmp_path: Path) -> None:
     jsonl.write_text(json.dumps(conversation) + "\n")
 
     tokenizer = Tokenizer(Vocabulary.byte_fallback())
+    tok_path = tmp_path / "tok.json"
+    save_vocab(tokenizer.vocab, tok_path)
     packed_dir = tmp_path / "packed"
     pack_sft(
         tokenizer,
@@ -83,6 +85,7 @@ def test_sft_single_step(tmp_path: Path) -> None:
         device="cpu",
         resume=None,
         init=None,
+        tokenizer=str(tok_path),
     )
 
     train_sft.train(args)

@@ -20,6 +20,7 @@ from torch.utils.data import DataLoader
 from alm.data.dataset import PackedDataset, collate_tokens
 from alm.model.config import DualFFNConfig, ModelConfig
 from alm.model.transformer import TransformerModel
+from alm.tokenizers import Tokenizer
 
 try:
     from rich.console import Console
@@ -153,6 +154,7 @@ def save_checkpoint(
     scheduler: torch.optim.lr_scheduler._LRScheduler,
     step: int,
     config: ModelConfig,
+    tokenizer_fingerprint: str | None,
 ) -> None:
     payload = {
         "model": model.state_dict(),
@@ -161,6 +163,8 @@ def save_checkpoint(
         "step": step,
         "config": dataclasses.asdict(config),
     }
+    if tokenizer_fingerprint:
+        payload["tokenizer_fingerprint"] = tokenizer_fingerprint
     torch.save(payload, path)
 
 
@@ -169,12 +173,12 @@ def load_checkpoint(
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
     scheduler: torch.optim.lr_scheduler._LRScheduler,
-) -> int:
+) -> tuple[int, str | None]:
     payload = torch.load(path, map_location="cpu")
     model.load_state_dict(payload["model"])
     optimizer.load_state_dict(payload["optimizer"])
     scheduler.load_state_dict(payload["scheduler"])
-    return int(payload.get("step", 0))
+    return int(payload.get("step", 0)), payload.get("tokenizer_fingerprint")
 
 
 def collate_for_training(batch: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -194,6 +198,18 @@ def train(args: argparse.Namespace) -> None:
     seq_len = dataset.seq_len
     if seq_len < 2:
         raise ValueError("Sequence length must be at least 2 for language modeling")
+
+    dataset_fingerprint = dataset.tokenizer_fingerprint
+    if dataset_fingerprint:
+        if not args.tokenizer:
+            raise ValueError(
+                "Packed dataset encodes tokenizer fingerprint; provide --tokenizer"
+            )
+        current_fp = Tokenizer.from_file(Path(args.tokenizer)).fingerprint
+        if current_fp != dataset_fingerprint:
+            raise ValueError("Tokenizer fingerprint mismatch between dataset and tokenizer")
+    elif args.tokenizer:
+        dataset_fingerprint = Tokenizer.from_file(Path(args.tokenizer)).fingerprint
 
     training_cfg = train_config.get("training", {})
     micro_batch_size = int(training_cfg.get("micro_batch_size", 8))
@@ -291,16 +307,17 @@ def train(args: argparse.Namespace) -> None:
 
     start_step = 0
     last_ckpt = output_dir / "ckpt-last.pt"
+    checkpoint_fp: str | None = None
     if args.resume and Path(args.resume).exists():
-        start_step = load_checkpoint(Path(args.resume), model, optimizer, scheduler)
+        start_step, checkpoint_fp = load_checkpoint(
+            Path(args.resume), model, optimizer, scheduler
+        )
         print(f"Resumed from {args.resume} @ step {start_step}")
-        override_scheduler_lr(optimizer, scheduler, target_base_lr)
     elif last_ckpt.exists():
-        start_step = load_checkpoint(last_ckpt, model, optimizer, scheduler)
+        start_step, checkpoint_fp = load_checkpoint(last_ckpt, model, optimizer, scheduler)
         print(f"Resumed from {last_ckpt} @ step {start_step}")
-        override_scheduler_lr(optimizer, scheduler, target_base_lr)
-    else:
-        override_scheduler_lr(optimizer, scheduler, target_base_lr)
+
+    override_scheduler_lr(optimizer, scheduler, target_base_lr)
     group_lr = [group["lr"] for group in optimizer.param_groups]
     print(
         "Loaded scheduler: "
@@ -309,6 +326,13 @@ def train(args: argparse.Namespace) -> None:
         f"group_lr={group_lr} "
         f"target_base_lr={target_base_lr}"
     )
+
+    if checkpoint_fp and dataset_fingerprint and checkpoint_fp != dataset_fingerprint:
+        raise ValueError(
+            "Checkpoint tokenizer fingerprint does not match dataset/tokenizer fingerprint"
+        )
+
+    tokenizer_fingerprint = dataset_fingerprint
 
     if use_rich:
         progress = Progress(
@@ -405,8 +429,17 @@ def train(args: argparse.Namespace) -> None:
                     scheduler,
                     step,
                     model_config,
+                    tokenizer_fingerprint,
                 )
-                save_checkpoint(last_ckpt, model, optimizer, scheduler, step, model_config)
+                save_checkpoint(
+                    last_ckpt,
+                    model,
+                    optimizer,
+                    scheduler,
+                    step,
+                    model_config,
+                    tokenizer_fingerprint,
+                )
                 if console:
                     console.log(f"Checkpoint saved at step {step}")
 
@@ -428,8 +461,17 @@ def train(args: argparse.Namespace) -> None:
             scheduler,
             step,
             model_config,
+            tokenizer_fingerprint,
         )
-        save_checkpoint(last_ckpt, model, optimizer, scheduler, step, model_config)
+        save_checkpoint(
+            last_ckpt,
+            model,
+            optimizer,
+            scheduler,
+            step,
+            model_config,
+            tokenizer_fingerprint,
+        )
         if console:
             console.print(
                 f"[green]Checkpoint saved at step {step}. Resume with --resume {last_ckpt}[/green]"
@@ -451,6 +493,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out", required=True, help="Output directory for checkpoints")
     parser.add_argument("--device", default="auto", help="Device to train on (auto/mps/cuda/cpu)")
     parser.add_argument("--resume", help="Optional checkpoint path to resume from")
+    parser.add_argument("--tokenizer", help="Tokenizer JSON path for fingerprint validation")
     return parser.parse_args()
 
 
