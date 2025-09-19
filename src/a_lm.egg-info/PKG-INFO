@@ -267,7 +267,7 @@ When you scale to longer runs, update `training.max_steps`, `scheduler.max_steps
 3. Fine-tune from your preferred pretraining checkpoint:
    ```bash
   export PYTORCH_MPS_FAST_MATH=1  
-  python scripts/train_sft.py \
+ python scripts/train_sft.py \
     --model configs/pico.yaml \
     --train configs/sft.yaml \
     --data data/sft_packed \
@@ -275,8 +275,11 @@ When you scale to longer runs, update `training.max_steps`, `scheduler.max_steps
     --device auto \
     --init runs/pico-pretrain/ckpt-last.pt \
     --tokenizer artifacts/tokenizer.json
-   ```
-   ```bash
+  ```
+   > Tip: start from a clean output directory (`rm -rf runs/pico-sft`) when switching
+   > tokenizers or architectures so you don't accidentally resume incompatible
+   > checkpoints.
+  ```bash
   export PYTORCH_MPS_FAST_MATH=1  
   python scripts/train_sft.py \
     --model configs/pico.yaml \
@@ -288,8 +291,8 @@ When you scale to longer runs, update `training.max_steps`, `scheduler.max_steps
     --tokenizer artifacts/tokenizer.json
    ```
 
-   - Swap `--init` for `--resume runs/pico-sft/ckpt-last.pt` to continue an interrupted SFT run.
-   - The loop masks user tokens, keeps FP32 loss, enables GradScaler on MPS/CUDA, and skips steps with non-finite gradients.
+   - Swap `--init` for `--resume runs/pico-sft/ckpt-last.pt` when continuing the same run.
+   - The loop masks user tokens, keeps FP32 loss, uses GradScaler on MPS/CUDA, and skips steps with non-finite gradients.
 4. Log qualitative changes with the checklist in `docs/sft_eval_prompts.md` so regressions are easy to spot.
 
 ---
