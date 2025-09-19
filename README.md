@@ -229,9 +229,9 @@ When you scale to longer runs, update `training.max_steps`, `scheduler.max_steps
    ```
 3. Fine-tune from your preferred pretraining checkpoint:
    ```bash
-  export PYTORCH_MPS_FAST_MATH=1  
- python scripts/train_sft.py \
-    --model configs/pico.yaml \
+  unset PYTORCH_MPS_FAST_MATH || true
+  python scripts/train_sft.py \
+    --model configs/pico_sft.yaml \
     --train configs/sft.yaml \
     --data data/sft_packed \
     --out runs/pico-sft \
@@ -243,9 +243,9 @@ When you scale to longer runs, update `training.max_steps`, `scheduler.max_steps
    > tokenizers or architectures so you don't accidentally resume incompatible
    > checkpoints.
   ```bash
-  export PYTORCH_MPS_FAST_MATH=1  
+  unset PYTORCH_MPS_FAST_MATH || true
   python scripts/train_sft.py \
-    --model configs/pico.yaml \
+    --model configs/pico_sft.yaml \
     --train configs/sft.yaml \
     --data data/sft_packed \
     --out runs/pico-sft \

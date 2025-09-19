@@ -39,9 +39,9 @@ sft-pack:
 		--chunk-size 64
 
 sft-train:
-	export PYTORCH_MPS_FAST_MATH=1
+	unset PYTORCH_MPS_FAST_MATH || true; \
 	python scripts/train_sft.py \
-		--model configs/pico.yaml \
+		--model configs/pico_sft.yaml \
 		--train configs/sft.yaml \
 		--data data/sft_packed \
 		--out runs/pico-sft \

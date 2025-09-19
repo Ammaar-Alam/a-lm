@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import math
+import os
 import time
 from contextlib import nullcontext
 from pathlib import Path
@@ -181,8 +182,17 @@ def collate_batch(
 
 def create_scaler(device: torch.device) -> torch.amp.GradScaler | None:
     try:
+        return torch.amp.GradScaler(
+            device.type,
+            enabled=device.type in {"cuda", "mps"},
+            init_scale=2.0**10,
+            growth_factor=2.0,
+            backoff_factor=0.5,
+            growth_interval=200,
+        )
+    except TypeError:  # pragma: no cover - fallback for older torch signature
         return torch.amp.GradScaler(device.type, enabled=device.type in {"cuda", "mps"})
-    except AttributeError:  # pragma: no cover - older torch
+    except AttributeError:  # pragma: no cover - very old torch without amp
         return None
 
 
@@ -245,8 +255,9 @@ def train(args: argparse.Namespace) -> None:
     scheduler = build_scheduler(optimizer, scheduler_cfg, max_steps)
 
     scaler = create_scaler(device)
-    if device.type == "mps" and scaler and scaler.is_enabled():
-        scaler = torch.amp.GradScaler(device.type, enabled=False)
+    if device.type == "mps" and os.getenv("PYTORCH_MPS_FAST_MATH"):
+        print("[warn] PYTORCH_MPS_FAST_MATH=1 detected; unset it for SFT stability on MPS.")
+    print(f"[amp] device={device.type} scaler_enabled={bool(scaler and scaler.is_enabled())}")
 
     def _autocast_ctx() -> Any:
         if device.type == "cuda":
