@@ -23,18 +23,14 @@ def resolve_device(name: str | None) -> torch.device:
     return torch.device("cpu")
 
 
-def load_checkpoint(
-    checkpoint: Path, device: torch.device
-) -> tuple[ModelConfig, dict, str | None]:
+def load_checkpoint(checkpoint: Path, device: torch.device) -> tuple[ModelConfig, dict, str | None]:
     payload = torch.load(checkpoint, map_location=device)
     config = ModelConfig.from_dict(payload["config"])
     state = payload["model"]
     return config, state, payload.get("tokenizer_fingerprint")
 
 
-def sample_next_token(
-    logits: torch.Tensor, top_k: int, top_p: float, temperature: float
-) -> int:
+def sample_next_token(logits: torch.Tensor, top_k: int, top_p: float, temperature: float) -> int:
     logits = logits / max(temperature, 1e-5)
     if top_k > 0:
         values, indices = torch.topk(logits, top_k)
@@ -50,10 +46,7 @@ def sample_next_token(
             mask[..., 0] = False
         clipped = sorted_probs.masked_fill(mask, 0.0)
         total = clipped.sum()
-        if total <= 0:
-            clipped = torch.ones_like(clipped) / clipped.size(-1)
-        else:
-            clipped = clipped / total
+        clipped = torch.ones_like(clipped) / clipped.size(-1) if total <= 0 else clipped / total
         choice = torch.multinomial(clipped, num_samples=1)
         return int(sorted_indices[choice])
     choice = torch.multinomial(probs, num_samples=1)
@@ -84,9 +77,7 @@ def generate(
                 window = generated[-128:]
                 penalize = torch.tensor(sorted(set(window)), device=device, dtype=torch.long)
                 if penalize.numel() > 0:
-                    next_logits.index_copy_(
-                        0, penalize, next_logits[penalize] / repetition_penalty
-                    )
+                    next_logits.index_copy_(0, penalize, next_logits[penalize] / repetition_penalty)
             next_token = sample_next_token(next_logits, top_k, top_p, temperature)
             generated.append(next_token)
             input_ids = torch.tensor([[next_token]], dtype=torch.long, device=device)

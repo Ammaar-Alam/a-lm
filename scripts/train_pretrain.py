@@ -202,9 +202,7 @@ def train(args: argparse.Namespace) -> None:
     dataset_fingerprint = dataset.tokenizer_fingerprint
     if dataset_fingerprint:
         if not args.tokenizer:
-            raise ValueError(
-                "Packed dataset encodes tokenizer fingerprint; provide --tokenizer"
-            )
+            raise ValueError("Packed dataset encodes tokenizer fingerprint; provide --tokenizer")
         current_fp = Tokenizer.from_file(Path(args.tokenizer)).fingerprint
         if current_fp != dataset_fingerprint:
             raise ValueError("Tokenizer fingerprint mismatch between dataset and tokenizer")
@@ -309,9 +307,7 @@ def train(args: argparse.Namespace) -> None:
     last_ckpt = output_dir / "ckpt-last.pt"
     checkpoint_fp: str | None = None
     if args.resume and Path(args.resume).exists():
-        start_step, checkpoint_fp = load_checkpoint(
-            Path(args.resume), model, optimizer, scheduler
-        )
+        start_step, checkpoint_fp = load_checkpoint(Path(args.resume), model, optimizer, scheduler)
         print(f"Resumed from {args.resume} @ step {start_step}")
     elif last_ckpt.exists():
         start_step, checkpoint_fp = load_checkpoint(last_ckpt, model, optimizer, scheduler)

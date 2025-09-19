@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Sequence
 from pathlib import Path
-
-import hashlib
 
 from .bpe_trainer import load_vocab
 from .normalizer import normalize_text

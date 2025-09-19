@@ -4,11 +4,9 @@ from __future__ import annotations
 
 import collections
 import json
-from collections.abc import Iterable
-from pathlib import Path
-
 import random
-from typing import Sequence
+from collections.abc import Iterable, Sequence
+from pathlib import Path
 
 from .normalizer import normalize_text
 from .vocab import Vocabulary
@@ -71,12 +69,18 @@ def train_bpe(
         tokens = merge_vocab(tokens, best_pair)
 
         merges_done = len(vocab) - base_size
-        if log_interval and log_interval > 0:
-            if merges_done == 1 or merges_done % log_interval == 0 or len(vocab) == vocab_size:
-                print(
-                    f"[tokenizer] merges={merges_done:,}/{merges_target:,} pair={best_pair[0]!r}+{best_pair[1]!r} freq={stats[best_pair]:,}",
-                    flush=True,
-                )
+        if (
+            log_interval
+            and log_interval > 0
+            and (merges_done == 1 or merges_done % log_interval == 0 or len(vocab) == vocab_size)
+        ):
+            print(
+                "[tokenizer] merges="
+                f"{merges_done:,}/{merges_target:,} "
+                f"pair={best_pair[0]!r}+{best_pair[1]!r} "
+                f"freq={stats[best_pair]:,}",
+                flush=True,
+            )
 
     if log_interval and log_interval > 0:
         print(
@@ -119,9 +123,12 @@ def train_from_files(
                 line = raw_line.rstrip("\n")
                 total_lines += 1
 
-                if sample_ratio is not None and 0.0 < sample_ratio < 1.0:
-                    if rng.random() > sample_ratio:
-                        continue
+                if (
+                    sample_ratio is not None
+                    and 0.0 < sample_ratio < 1.0
+                    and rng.random() > sample_ratio
+                ):
+                    continue
 
                 if cap is None:
                     selected.append(line)

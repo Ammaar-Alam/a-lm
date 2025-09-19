@@ -213,9 +213,7 @@ def train(args: argparse.Namespace) -> None:
             )
         current_fp = Tokenizer.from_file(Path(args.tokenizer)).fingerprint
         if current_fp != dataset.tokenizer_fingerprint:
-            raise ValueError(
-                "Tokenizer fingerprint mismatch between dataset and current tokenizer"
-            )
+            raise ValueError("Tokenizer fingerprint mismatch between dataset and current tokenizer")
     elif args.tokenizer:
         dataset_fingerprint = Tokenizer.from_file(Path(args.tokenizer)).fingerprint
 
@@ -263,9 +261,7 @@ def train(args: argparse.Namespace) -> None:
     start_step = 0
     checkpoint_fp: str | None = None
     if args.resume and Path(args.resume).exists():
-        start_step, checkpoint_fp = load_checkpoint(
-            Path(args.resume), model, optimizer, scheduler
-        )
+        start_step, checkpoint_fp = load_checkpoint(Path(args.resume), model, optimizer, scheduler)
         print(f"Resumed from {args.resume} @ step {start_step}")
     elif last_ckpt.exists():
         start_step, checkpoint_fp = load_checkpoint(last_ckpt, model, optimizer, scheduler)
