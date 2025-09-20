@@ -350,17 +350,21 @@ def train(args: argparse.Namespace) -> None:
             total_norm = nn.utils.clip_grad_norm_(
                 model.parameters(), grad_clip, error_if_nonfinite=False
             )
-            if not torch.isfinite(total_norm):
-                print("Non-finite grad norm detected; skipping step")
-                optimizer.zero_grad(set_to_none=True)
-                if scaler and scaler.is_enabled():
-                    scaler.update()
-                continue
 
             if scaler and scaler.is_enabled():
+                prev_scale = float(scaler.get_scale())
                 scaler.step(optimizer)
                 scaler.update()
+                new_scale = float(scaler.get_scale())
+                if new_scale < prev_scale:
+                    print(
+                        f"[amp] overflow detected; loss_scale {prev_scale:.0f} -> {new_scale:.0f}"
+                    )
             else:
+                if not torch.isfinite(total_norm):
+                    print("Non-finite grad norm detected; skipping step (fp32 path)")
+                    optimizer.zero_grad(set_to_none=True)
+                    continue
                 optimizer.step()
             scheduler.step()
             step += 1
