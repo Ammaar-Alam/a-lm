@@ -77,7 +77,15 @@ def generate_reply(
                 window = generated[-128:]
                 penalize = torch.tensor(sorted(set(window)), device=device, dtype=torch.long)
                 if penalize.numel() > 0:
-                    next_logits.index_copy_(0, penalize, next_logits[penalize] / repetition_penalty)
+                    # MPS doesn't implement aten::index_copy.out in some PyTorch builds.
+                    # Prefer index_copy_ when available; otherwise fall back to an
+                    # index assignment that works on MPS.
+                    try:
+                        next_logits.index_copy_(
+                            0, penalize, next_logits[penalize] / repetition_penalty
+                        )
+                    except NotImplementedError:
+                        next_logits[penalize] = next_logits[penalize] / repetition_penalty
             token = sample_next_token(next_logits, top_k, top_p, temperature)
             generated.append(token)
             input_ids = torch.tensor([[token]], dtype=torch.long, device=device)
