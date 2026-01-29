@@ -133,7 +133,11 @@ def generate_sample(
                     window = generated[-128:]
                     penalize = torch.tensor(sorted(set(window)), device=device, dtype=torch.long)
                     if penalize.numel() > 0:
-                        next_logits.index_copy_(0, penalize, next_logits[penalize] / repetition_penalty)
+                        next_logits.index_copy_(
+                            0,
+                            penalize,
+                            next_logits[penalize] / repetition_penalty,
+                        )
                 next_token = sample_next_token(next_logits, top_k, top_p, temperature)
                 generated.append(next_token)
                 input_ids = torch.tensor([[next_token]], dtype=torch.long, device=device)
@@ -562,7 +566,9 @@ def train(args: argparse.Namespace) -> None:
             if scaler.is_enabled():
                 scaler.unscale_(optimizer)
             total_norm = nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-            grad_norm = float(total_norm.detach().item() if isinstance(total_norm, torch.Tensor) else total_norm)
+            grad_norm = float(
+                total_norm.detach().item() if isinstance(total_norm, torch.Tensor) else total_norm
+            )
             if scaler.is_enabled():
                 scaler.step(optimizer)
                 scaler.update()
@@ -573,8 +579,16 @@ def train(args: argparse.Namespace) -> None:
 
             iter_time = max(time.perf_counter() - iter_start, 1e-8)
             tokens_per_sec = tokens_per_step / iter_time
-            loss_ema = accum_loss if loss_ema is None else loss_beta * loss_ema + (1.0 - loss_beta) * accum_loss
-            tps_ema = tokens_per_sec if tps_ema is None else tps_beta * tps_ema + (1.0 - tps_beta) * tokens_per_sec
+            loss_ema = (
+                accum_loss
+                if loss_ema is None
+                else loss_beta * loss_ema + (1.0 - loss_beta) * accum_loss
+            )
+            tps_ema = (
+                tokens_per_sec
+                if tps_ema is None
+                else tps_beta * tps_ema + (1.0 - tps_beta) * tokens_per_sec
+            )
             lr = optimizer.param_groups[0]["lr"]
 
             if use_rich and progress and progress_task is not None:
