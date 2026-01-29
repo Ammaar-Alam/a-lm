@@ -28,6 +28,13 @@ If the repo is private, upload a zip to Drive and unzip:
 !pip install -e .[dev]
 ```
 
+If you hit a `PyGILState_Release` crash during dataset prep, upgrade the HF stack in Colab
+using versions that are compatible with Colab’s preinstalled `transformers`:
+```bash
+!pip uninstall -y datasets huggingface_hub pyarrow fsspec gcsfs
+!pip install "huggingface_hub<1.0" "datasets>=2.19,<3.0" "pyarrow>=14,<19" "fsspec==2025.3.0" "gcsfs==2025.3.0"
+```
+
 ## 4) Log into Hugging Face (required for datasets)
 ```python
 from huggingface_hub import login
@@ -64,4 +71,3 @@ Optional knobs (use only if you want to change defaults):
   - `configs/train_colab.yaml`
 - To scale further, update `configs/corpus_colab.yaml` and `configs/train_colab.yaml`.
 - If GPU memory is tight, keep `SEQ_LEN=512` and/or reduce `training.micro_batch_size`.
-

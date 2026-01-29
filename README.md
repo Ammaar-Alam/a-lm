@@ -68,6 +68,7 @@ Optional but helpful:
 
 ## Colab Guide
 See `docs/colab.md` for a step-by-step Colab notebook setup, including Drive persistence and the `colab-pretrain` target.
+If dataset prep crashes with a `PyGILState_Release` error on Colab, upgrade the HF stack with the pinned versions shown in that guide (keeps `transformers` compatibility).
 
 ---
 

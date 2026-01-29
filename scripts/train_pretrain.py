@@ -10,7 +10,7 @@ import time
 from contextlib import nullcontext
 from itertools import cycle
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 import torch
 import yaml
@@ -35,6 +35,118 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - optional dependency
     Console = None
     Progress = None
+
+
+def describe_device(device: torch.device) -> str:
+    torch_version = getattr(torch, "__version__", "unknown")
+    if device.type == "cuda":
+        index = device.index if device.index is not None else torch.cuda.current_device()
+        props = torch.cuda.get_device_properties(index)
+        mem_gib = props.total_memory / (1024**3)
+        capability = f"{props.major}.{props.minor}"
+        return (
+            f"torch={torch_version} device=cuda:{index} "
+            f"name={props.name} cc={capability} vram={mem_gib:.1f}GiB "
+            f"cuda_runtime={torch.version.cuda} devices={torch.cuda.device_count()}"
+        )
+    if device.type == "mps":
+        built = torch.backends.mps.is_built()
+        available = torch.backends.mps.is_available()
+        return f"torch={torch_version} device=mps built={built} available={available}"
+    threads = torch.get_num_threads()
+    return f"torch={torch_version} device=cpu threads={threads}"
+
+
+def open_log_file(output_dir: Path, log_cfg: dict[str, Any]) -> tuple[TextIO | None, Path | None]:
+    log_path = log_cfg.get("log_file")
+    if not isinstance(log_path, str) or not log_path.strip():
+        return None, None
+
+    mode = str(log_cfg.get("log_file_mode", "a")).lower().strip()
+    if mode not in {"a", "w"}:
+        mode = "a"
+
+    path = Path(log_path)
+    if not path.is_absolute():
+        path = output_dir / path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path.open(mode=mode, encoding="utf-8", buffering=1), path
+
+
+def sample_next_token(logits: torch.Tensor, top_k: int, top_p: float, temperature: float) -> int:
+    logits = logits / max(temperature, 1e-5)
+    if top_k > 0:
+        values, indices = torch.topk(logits, top_k)
+        probs = torch.softmax(values, dim=-1)
+        choice = torch.multinomial(probs, num_samples=1)
+        return int(indices[choice])
+    probs = torch.softmax(logits, dim=-1)
+    if 0.0 < top_p < 1.0:
+        sorted_probs, sorted_indices = torch.sort(probs, descending=True)
+        cumulative = torch.cumsum(sorted_probs, dim=-1)
+        mask = cumulative > top_p
+        if mask.shape[0] > 0:
+            mask[..., 0] = False
+        clipped = sorted_probs.masked_fill(mask, 0.0)
+        total = clipped.sum()
+        clipped = torch.ones_like(clipped) / clipped.size(-1) if total <= 0 else clipped / total
+        choice = torch.multinomial(clipped, num_samples=1)
+        return int(sorted_indices[choice])
+    choice = torch.multinomial(probs, num_samples=1)
+    return int(choice)
+
+
+def generate_sample(
+    model: TransformerModel,
+    tokenizer: Tokenizer,
+    prompt: str,
+    max_tokens: int,
+    temperature: float,
+    top_k: int,
+    top_p: float,
+    repetition_penalty: float,
+    stop_strings: list[str],
+    device: torch.device,
+    autocast_ctx: Any,
+) -> str:
+    model_was_training = model.training
+    model.eval()
+    try:
+        with torch.inference_mode():
+            prompt_tokens = tokenizer.encode(prompt)
+            max_context = model.config.max_position_embeddings
+            context_budget = max_context - max_tokens
+            if context_budget <= 0:
+                context_budget = max_context
+            if len(prompt_tokens) > context_budget:
+                prompt_tokens = prompt_tokens[-context_budget:]
+
+            generated: list[int] = list(prompt_tokens)
+            input_ids = torch.tensor(generated, dtype=torch.long, device=device).unsqueeze(0)
+            past = None
+            prompt_len = len(prompt_tokens)
+            for _ in range(max_tokens):
+                with autocast_ctx:
+                    logits, past, _ = model(input_ids, past_key_values=past, use_cache=True)
+                next_logits = logits[:, -1, :].squeeze(0)
+                if repetition_penalty > 1.0 and generated:
+                    window = generated[-128:]
+                    penalize = torch.tensor(sorted(set(window)), device=device, dtype=torch.long)
+                    if penalize.numel() > 0:
+                        next_logits.index_copy_(0, penalize, next_logits[penalize] / repetition_penalty)
+                next_token = sample_next_token(next_logits, top_k, top_p, temperature)
+                generated.append(next_token)
+                input_ids = torch.tensor([[next_token]], dtype=torch.long, device=device)
+                if stop_strings:
+                    completion = tokenizer.decode(generated[prompt_len:])
+                    for stop in stop_strings:
+                        stop_idx = completion.find(stop)
+                        if stop_idx != -1:
+                            return tokenizer.decode(prompt_tokens) + completion[:stop_idx]
+            return tokenizer.decode(generated)
+    finally:
+        if model_was_training:
+            model.train()
 
 
 def resolve_device(name: str | None) -> torch.device:
@@ -193,6 +305,7 @@ def train(args: argparse.Namespace) -> None:
 
     model_config = load_model_config(Path(args.model))
     train_config = load_train_config(Path(args.train))
+    log_cfg = train_config.get("logging", {})
 
     dataset = PackedDataset(Path(args.data))
     seq_len = dataset.seq_len
@@ -200,14 +313,16 @@ def train(args: argparse.Namespace) -> None:
         raise ValueError("Sequence length must be at least 2 for language modeling")
 
     dataset_fingerprint = dataset.tokenizer_fingerprint
+    tokenizer: Tokenizer | None = None
     if dataset_fingerprint:
         if not args.tokenizer:
             raise ValueError("Packed dataset encodes tokenizer fingerprint; provide --tokenizer")
-        current_fp = Tokenizer.from_file(Path(args.tokenizer)).fingerprint
-        if current_fp != dataset_fingerprint:
+        tokenizer = Tokenizer.from_file(Path(args.tokenizer))
+        if tokenizer.fingerprint != dataset_fingerprint:
             raise ValueError("Tokenizer fingerprint mismatch between dataset and tokenizer")
     elif args.tokenizer:
-        dataset_fingerprint = Tokenizer.from_file(Path(args.tokenizer)).fingerprint
+        tokenizer = Tokenizer.from_file(Path(args.tokenizer))
+        dataset_fingerprint = tokenizer.fingerprint
 
     training_cfg = train_config.get("training", {})
     micro_batch_size = int(training_cfg.get("micro_batch_size", 8))
@@ -217,6 +332,8 @@ def train(args: argparse.Namespace) -> None:
     mixed_precision = str(training_cfg.get("mixed_precision", "fp32")).lower()
 
     device = resolve_device(args.device)
+    log_file, log_file_path = open_log_file(output_dir, log_cfg)
+    log_flush = bool(log_cfg.get("log_file_flush", True))
 
     num_workers = int(training_cfg.get("dataloader_workers", 0))
     dataloader = DataLoader(
@@ -292,9 +409,29 @@ def train(args: argparse.Namespace) -> None:
         print(f"Using mixed precision '{precision_used}' on {device.type}")
 
     criterion = nn.CrossEntropyLoss()
-    log_cfg = train_config.get("logging", {})
     log_interval = int(log_cfg.get("log_interval", 100))
     ckpt_interval = int(training_cfg.get("checkpoint_interval", 500))
+    log_grad_norm = bool(log_cfg.get("log_grad_norm", False))
+    ema_beta = _as_float(log_cfg.get("ema_beta", 0.9), 0.9)
+    ema_beta = max(0.0, min(ema_beta, 0.999))
+    loss_beta = _as_float(log_cfg.get("loss_ema_beta", ema_beta), ema_beta)
+    loss_beta = max(0.0, min(loss_beta, 0.999))
+    tps_beta = _as_float(log_cfg.get("tps_ema_beta", ema_beta), ema_beta)
+    tps_beta = max(0.0, min(tps_beta, 0.999))
+
+    sample_interval = int(log_cfg.get("sample_interval", 0))
+    sample_at_start = bool(log_cfg.get("sample_at_start", False))
+    sample_prompt = str(log_cfg.get("sample_prompt", "Hello"))
+    sample_max_tokens = max(0, int(log_cfg.get("sample_max_tokens", 80)))
+    sample_temperature = _as_float(log_cfg.get("sample_temperature", 0.8), 0.8)
+    sample_top_k = int(log_cfg.get("sample_top_k", 40))
+    sample_top_p = _as_float(log_cfg.get("sample_top_p", 0.95), 0.95)
+    sample_repetition_penalty = _as_float(log_cfg.get("sample_repetition_penalty", 1.1), 1.1)
+    stop_cfg = log_cfg.get("sample_stop", [])
+    sample_stop_strings: list[str] = []
+    if isinstance(stop_cfg, list):
+        sample_stop_strings = [str(item) for item in stop_cfg if item is not None]
+
     use_rich = bool(log_cfg.get("rich_progress", True) and Progress and Console)
     console = Console() if use_rich else (Console() if Console else None)
     progress: Progress | None = None
@@ -302,20 +439,45 @@ def train(args: argparse.Namespace) -> None:
     tokens_per_step = micro_batch_size * grad_accum * seq_len
     loss_ema: float | None = None
     tps_ema: float | None = None
+    grad_norm: float | None = None
+
+    def _timestamp() -> str:
+        return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+
+    def log_event(message: str) -> None:
+        if log_file:
+            log_file.write(f"{_timestamp()} {message}\n")
+            if log_flush:
+                log_file.flush()
+        if console:
+            console.log(message)
+        else:
+            print(message)
+
+    def log_metrics(message: str) -> None:
+        if log_file:
+            log_file.write(f"{_timestamp()} {message}\n")
+            if log_flush:
+                log_file.flush()
+        if not use_rich:
+            if console:
+                console.log(message)
+            else:
+                print(message)
 
     start_step = 0
     last_ckpt = output_dir / "ckpt-last.pt"
     checkpoint_fp: str | None = None
     if args.resume and Path(args.resume).exists():
         start_step, checkpoint_fp = load_checkpoint(Path(args.resume), model, optimizer, scheduler)
-        print(f"Resumed from {args.resume} @ step {start_step}")
+        log_event(f"Resumed from {args.resume} @ step {start_step}")
     elif last_ckpt.exists():
         start_step, checkpoint_fp = load_checkpoint(last_ckpt, model, optimizer, scheduler)
-        print(f"Resumed from {last_ckpt} @ step {start_step}")
+        log_event(f"Resumed from {last_ckpt} @ step {start_step}")
 
     override_scheduler_lr(optimizer, scheduler, target_base_lr)
     group_lr = [group["lr"] for group in optimizer.param_groups]
-    print(
+    log_event(
         "Loaded scheduler: "
         f"last_epoch={scheduler.last_epoch} "
         f"base_lrs={scheduler.base_lrs} "
@@ -330,8 +492,18 @@ def train(args: argparse.Namespace) -> None:
 
     tokenizer_fingerprint = dataset_fingerprint
 
+    if log_file_path:
+        log_event(f"Logging to {log_file_path}")
+    log_event(describe_device(device))
+    log_event(
+        "Run config: "
+        f"seq_len={seq_len} micro_batch={micro_batch_size} grad_accum={grad_accum} "
+        f"tokens_per_step={tokens_per_step} max_steps={max_steps} "
+        f"precision={precision_used} ema_beta={ema_beta:.3f}"
+    )
+
     if use_rich:
-        progress = Progress(
+        columns: list[Any] = [
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
             TaskProgressColumn(),
@@ -340,6 +512,11 @@ def train(args: argparse.Namespace) -> None:
             TextColumn("loss={task.fields[loss]:.4f}", justify="right"),
             TextColumn("lr={task.fields[lr]:.2e}", justify="right"),
             TextColumn("tok/s={task.fields[tps]:.0f}", justify="right"),
+        ]
+        if log_grad_norm:
+            columns.append(TextColumn("gn={task.fields[gn]:.2f}", justify="right"))
+        progress = Progress(
+            *columns,
             console=console,
             transient=False,
         )
@@ -351,6 +528,7 @@ def train(args: argparse.Namespace) -> None:
             loss=0.0,
             lr=0.0,
             tps=0.0,
+            gn=0.0,
         )
 
     model.train()
@@ -383,7 +561,8 @@ def train(args: argparse.Namespace) -> None:
                 accum_loss += float(loss.detach().item())
             if scaler.is_enabled():
                 scaler.unscale_(optimizer)
-            nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            total_norm = nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+            grad_norm = float(total_norm.detach().item() if isinstance(total_norm, torch.Tensor) else total_norm)
             if scaler.is_enabled():
                 scaler.step(optimizer)
                 scaler.update()
@@ -394,8 +573,8 @@ def train(args: argparse.Namespace) -> None:
 
             iter_time = max(time.perf_counter() - iter_start, 1e-8)
             tokens_per_sec = tokens_per_step / iter_time
-            loss_ema = accum_loss if loss_ema is None else 0.9 * loss_ema + 0.1 * accum_loss
-            tps_ema = tokens_per_sec if tps_ema is None else 0.9 * tps_ema + 0.1 * tokens_per_sec
+            loss_ema = accum_loss if loss_ema is None else loss_beta * loss_ema + (1.0 - loss_beta) * accum_loss
+            tps_ema = tokens_per_sec if tps_ema is None else tps_beta * tps_ema + (1.0 - tps_beta) * tokens_per_sec
             lr = optimizer.param_groups[0]["lr"]
 
             if use_rich and progress and progress_task is not None:
@@ -405,17 +584,56 @@ def train(args: argparse.Namespace) -> None:
                     loss=loss_ema,
                     lr=lr,
                     tps=tps_ema,
+                    gn=grad_norm or 0.0,
                 )
 
             if (step % log_interval == 0 or step == start_step + 1) and not use_rich:
-                msg = (
-                    f"step={step}/{max_steps} loss={accum_loss:.4f} "
-                    f"lr={lr:.3e} tok/s={tokens_per_sec:.0f}"
-                )
-                if console:
-                    console.log(msg)
+                msg = f"step={step}/{max_steps} loss={loss_ema:.4f} lr={lr:.3e} tok/s={tps_ema:.0f}"
+                if log_grad_norm and grad_norm is not None:
+                    msg += f" gn={grad_norm:.2f}"
+                log_metrics(msg)
+            elif step % log_interval == 0 or step == start_step + 1:
+                msg = f"step={step}/{max_steps} loss={loss_ema:.4f} lr={lr:.3e} tok/s={tps_ema:.0f}"
+                if log_grad_norm and grad_norm is not None:
+                    msg += f" gn={grad_norm:.2f}"
+                if log_file:
+                    log_metrics(msg)
+
+            should_sample = sample_interval > 0 and step % sample_interval == 0
+            if sample_interval > 0 and sample_at_start and step == start_step + 1:
+                should_sample = True
+            if should_sample:
+                if tokenizer is None and args.tokenizer:
+                    tokenizer = Tokenizer.from_file(Path(args.tokenizer))
+                if tokenizer is None:
+                    log_event("Sample generation requested but no --tokenizer provided; skipping.")
                 else:
-                    print(msg)
+                    text = generate_sample(
+                        model,
+                        tokenizer,
+                        sample_prompt,
+                        sample_max_tokens,
+                        sample_temperature,
+                        sample_top_k,
+                        sample_top_p,
+                        sample_repetition_penalty,
+                        sample_stop_strings,
+                        device,
+                        autocast_ctx,
+                    )
+                    header = f"[sample] step={step} prompt={sample_prompt!r}"
+                    if log_file:
+                        log_file.write(f"{_timestamp()} {header}\n")
+                        for line in text.splitlines() or [""]:
+                            log_file.write(f"{_timestamp()} > {line}\n")
+                        if log_flush:
+                            log_file.flush()
+                    if console:
+                        console.log(header)
+                        console.print(text, markup=False)
+                    else:
+                        print(header)
+                        print(text)
 
             if step % ckpt_interval == 0 or step == max_steps:
                 save_checkpoint(
@@ -436,15 +654,11 @@ def train(args: argparse.Namespace) -> None:
                     model_config,
                     tokenizer_fingerprint,
                 )
-                if console:
-                    console.log(f"Checkpoint saved at step {step}")
+                log_event(f"Checkpoint saved at step {step}")
 
     except KeyboardInterrupt:
         interrupted = True
-        if console:
-            console.print("[yellow]Training interrupted. Saving checkpoint...[/yellow]")
-        else:
-            print("Training interrupted. Saving checkpoint...")
+        log_event("Training interrupted. Saving checkpoint...")
     finally:
         if use_rich and progress:
             progress.stop()
@@ -468,17 +682,11 @@ def train(args: argparse.Namespace) -> None:
             model_config,
             tokenizer_fingerprint,
         )
-        if console:
-            console.print(
-                f"[green]Checkpoint saved at step {step}. Resume with --resume {last_ckpt}[/green]"
-            )
-        else:
-            print(f"Checkpoint saved at step {step}. Resume with --resume {last_ckpt}")
+        log_event(f"Checkpoint saved at step {step}. Resume with --resume {last_ckpt}")
     else:
-        if console:
-            console.print("[green]Training complete.[/green]")
-        else:
-            print("Training complete.")
+        log_event("Training complete.")
+    if log_file:
+        log_file.close()
 
 
 def parse_args() -> argparse.Namespace:

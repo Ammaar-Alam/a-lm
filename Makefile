@@ -3,6 +3,8 @@ PIP ?= $(PYTHON) -m pip
 
 .PHONY: dev install lint format test clean check-mps train-pico fresh-pretrain colab-pretrain chat rlvr-data rlvr-train sft-prepare sft-pack sft-train
 
+export PYTHONPATH := $(CURDIR)/src:$(PYTHONPATH)
+
 LIBOMP_DIR ?= $(firstword $(wildcard /opt/homebrew/opt/libomp/lib /usr/local/opt/libomp/lib))
 ifneq ($(LIBOMP_DIR),)
 export DYLD_LIBRARY_PATH := $(LIBOMP_DIR):$(DYLD_LIBRARY_PATH)
