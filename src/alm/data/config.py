@@ -17,6 +17,10 @@ class SourceConfig:
     split: str = "train"
     config: str | None = None
     streaming: bool = False
+    # Optional list of columns to request from the dataset loader.
+    # This is especially useful for streaming Parquet-backed datasets where
+    # some shards may have schema drift across non-essential columns.
+    columns: list[str] | None = None
     sample_tokens: int | None = None
     sample_articles: int | None = None
     path: str | None = None

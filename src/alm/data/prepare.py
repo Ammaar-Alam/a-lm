@@ -14,16 +14,41 @@ from .config import CorpusConfig, SourceConfig
 
 
 def iter_huggingface_source(cfg: SourceConfig, cache_dir: str | None) -> Iterator[str]:
-    kwargs = {}
+    kwargs: dict = {}
     if cfg.config:
         kwargs["name"] = cfg.config
-    dataset = load_dataset(
-        cfg.dataset,
-        split=cfg.split,
-        streaming=cfg.streaming,
-        cache_dir=cache_dir,
-        **kwargs,
-    )
+
+    # For Parquet-backed streaming datasets, requesting only the needed columns
+    # avoids hard failures when some shards have schema drift on non-essential
+    # fields (e.g. a missing "date" column in certain FineWeb shards).
+    columns = cfg.columns
+    if columns is None and cfg.streaming:
+        columns = ["text"]
+
+    def _load(with_columns: list[str] | None):
+        base_kwargs = dict(
+            split=cfg.split,
+            streaming=cfg.streaming,
+            cache_dir=cache_dir,
+            **kwargs,
+        )
+        if with_columns:
+            # 'columns' is supported for Parquet-backed streaming datasets.
+            return load_dataset(cfg.dataset, columns=with_columns, **base_kwargs)
+        return load_dataset(cfg.dataset, **base_kwargs)
+
+    try:
+        dataset = _load(columns)
+    except TypeError:
+        # Older datasets versions may not accept 'columns' in load_dataset().
+        dataset = _load(None)
+    except Exception:
+        # If 'columns' selection is rejected for this dataset, fall back to
+        # default behavior.
+        if columns:
+            dataset = _load(None)
+        else:
+            raise
     count_tokens = 0
     count_entries = 0
     for sample in dataset:

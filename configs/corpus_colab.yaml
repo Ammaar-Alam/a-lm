@@ -5,6 +5,7 @@ sources:
     dataset: HuggingFaceFW/fineweb-edu
     split: train
     streaming: true
+    columns: ["text"]
     sample_tokens: 20000000
     notes: "Medium slice of FineWeb-Edu for colab."
   wikipedia_en:
@@ -13,6 +14,7 @@ sources:
     config: 20231101.en
     split: train
     streaming: true
+    columns: ["text"]
     sample_tokens: 20000000
     notes: "Medium slice of English Wikipedia."
   tinystories:
@@ -20,6 +22,7 @@ sources:
     dataset: roneneldan/TinyStories
     split: train
     streaming: true
+    columns: ["text"]
     sample_tokens: 5000000
     notes: "TinyStories slice for early convergence sanity checks."
 
