@@ -26,8 +26,14 @@ src/alm/model/rope.py
 src/alm/model/swiglu.py
 src/alm/model/transformer.py
 src/alm/quant/__init__.py
+src/alm/rlvr/__init__.py
+src/alm/rlvr/logprobs.py
+src/alm/rlvr/math_tasks.py
+src/alm/rlvr/reward.py
 src/alm/tokenizers/__init__.py
 src/alm/tokenizers/bpe_trainer.py
+src/alm/tokenizers/hf_tokenizer.py
+src/alm/tokenizers/hf_trainer.py
 src/alm/tokenizers/normalizer.py
 src/alm/tokenizers/tokenizer.py
 src/alm/tokenizers/unigram_trainer.py

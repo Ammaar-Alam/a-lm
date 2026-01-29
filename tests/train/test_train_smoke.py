@@ -23,6 +23,7 @@ def create_packed_dataset(tmp_path: Path) -> tuple[Path, Path]:
         shard_size=8,
         out_dir=packed_dir,
         eos_token="\n",
+        tokenizer_path=tok_path,
     )
     return packed_dir, tok_path
 

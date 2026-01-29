@@ -73,6 +73,7 @@ def prepare_source(cfg: SourceConfig, out_dir: Path, cache_dir: str | None = Non
     with output_path.open("w", encoding="utf-8") as writer:
         for line in iterator:
             cleaned = normalize_text(line)
+            cleaned = cleaned.replace("\n", " ").replace("\t", " ").strip()
             if not cleaned:
                 continue
             writer.write(cleaned + "\n")

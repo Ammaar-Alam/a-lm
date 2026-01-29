@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""CLI for training the byte fallback tokenizer."""
+"""CLI for training the tokenizer used by a-lm."""
 
 from __future__ import annotations
 
 import argparse
 
 from alm.tokenizers import cli_train_tokenizer
+from alm.tokenizers.hf_trainer import cli_train_hf_bpe
 
 
 def parse_args() -> argparse.Namespace:
@@ -13,6 +14,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input", nargs="+", required=True, help="Input text files")
     parser.add_argument("--vocab-size", type=int, default=32000, help="Target vocabulary size")
     parser.add_argument("--out", required=True, help="Output tokenizer JSON path")
+    parser.add_argument(
+        "--backend",
+        choices=("hf", "python"),
+        default="hf",
+        help="Tokenizer training backend (default: hf)",
+    )
     parser.add_argument(
         "--max-lines",
         type=int,
@@ -30,6 +37,12 @@ def parse_args() -> argparse.Namespace:
         help="Print status every N merges (default: 500)",
     )
     parser.add_argument(
+        "--min-frequency",
+        type=int,
+        default=2,
+        help="Minimum token frequency for hf backend (default: 2)",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=1337,
@@ -40,13 +53,25 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    cli_train_tokenizer(
+    if args.backend == "python":
+        cli_train_tokenizer(
+            args.input,
+            args.vocab_size,
+            args.out,
+            max_lines=args.max_lines,
+            sample_ratio=args.sample_ratio,
+            log_interval=args.log_interval,
+            seed=args.seed,
+        )
+        return
+
+    cli_train_hf_bpe(
         args.input,
         args.vocab_size,
         args.out,
         max_lines=args.max_lines,
         sample_ratio=args.sample_ratio,
-        log_interval=args.log_interval,
+        min_frequency=args.min_frequency,
         seed=args.seed,
     )
 

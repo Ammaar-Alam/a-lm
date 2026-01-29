@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Sequence
 from pathlib import Path
 
-from .bpe_trainer import load_vocab
 from .normalizer import normalize_text
 from .vocab import Vocabulary
 
@@ -107,6 +107,12 @@ class Tokenizer:
         return [self.encode(text) for text in texts]
 
     @classmethod
-    def from_file(cls, path: Path) -> Tokenizer:
-        vocab = load_vocab(path)
-        return cls(vocab)
+    def from_file(cls, path: Path):  # type: ignore[override]
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        if isinstance(data, dict) and isinstance(data.get("tokens"), list):
+            vocab = Vocabulary()
+            vocab.extend(data["tokens"])
+            return cls(vocab)
+        from .hf_tokenizer import HFTokenizer
+
+        return HFTokenizer.from_file(path)

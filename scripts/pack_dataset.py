@@ -62,6 +62,7 @@ def main() -> None:
         show_progress=not args.no_progress,
         workers=args.workers,
         chunk_size=args.chunk_size,
+        tokenizer_path=Path(args.tokenizer),
     )
     total_shards = len(metadata["shards"])
     total_tokens = metadata["total_tokens"]

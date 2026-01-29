@@ -13,7 +13,6 @@ from typing import Any
 import numpy as np
 
 from alm.tokenizers.tokenizer import Tokenizer
-from alm.tokenizers.vocab import Vocabulary
 
 try:  # optional progress display
     from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
@@ -26,14 +25,12 @@ _PROMPT_TOKENS = {
     "assistant": "{text}\n",
 }
 
-_WORKER_TOKENIZER: Tokenizer | None = None
+_WORKER_TOKENIZER: Any | None = None
 
 
-def _worker_init(tokens: list[str]) -> None:
-    vocab = Vocabulary()
-    vocab.extend(tokens)
+def _worker_init(tokenizer_path: str) -> None:
     global _WORKER_TOKENIZER
-    _WORKER_TOKENIZER = Tokenizer(vocab)
+    _WORKER_TOKENIZER = Tokenizer.from_file(Path(tokenizer_path))
 
 
 def _conversation_to_segments(conversation: dict[str, Any]) -> list[tuple[str, int]]:
@@ -100,6 +97,7 @@ def pack_sft(
     show_progress: bool = False,
     workers: int | None = None,
     chunk_size: int = 64,
+    tokenizer_path: Path | None = None,
 ) -> dict[str, Any]:
     out_dir.mkdir(parents=True, exist_ok=True)
     total_tokens = 0
@@ -166,8 +164,6 @@ def pack_sft(
             if len(token_buffer) >= shard_size:
                 flush()
 
-    snapshot = list(tokenizer.vocab.id_to_token)
-
     def chunk_iterator(iterator: Iterator[dict[str, Any]]) -> Iterator[list[dict[str, Any]]]:
         batch: list[dict[str, Any]] = []
         for item in iterator:
@@ -180,14 +176,19 @@ def pack_sft(
 
     iterator = iter(conversations)
     if workers > 1:
+        if tokenizer_path is None:
+            raise ValueError("tokenizer_path required when workers > 1")
         ctx = mp.get_context("spawn")
-        with ctx.Pool(processes=workers, initializer=_worker_init, initargs=(snapshot,)) as pool:
+        with ctx.Pool(
+            processes=workers, initializer=_worker_init, initargs=(str(tokenizer_path),)
+        ) as pool:
             for batch in chunk_iterator(iterator):
                 for ids, mask in pool.imap(_encode_conversation, batch, chunksize=1):
                     if ids:
                         add_sequence(ids, mask)
     else:
-        _worker_init(snapshot)
+        global _WORKER_TOKENIZER
+        _WORKER_TOKENIZER = tokenizer
         for conversation in iterator:
             ids, mask = _encode_conversation(conversation)
             if ids:

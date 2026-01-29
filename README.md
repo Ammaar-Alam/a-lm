@@ -19,6 +19,7 @@
 12. [Testing & Linting](#testing--linting)
 13. [Troubleshooting](#troubleshooting)
 14. [Next Steps](#next-steps)
+15. [Colab Guide](#colab-guide)
 
 ---
 
@@ -65,6 +66,11 @@ Optional but helpful:
 
 ---
 
+## Colab Guide
+See `docs/colab.md` for a step-by-step Colab notebook setup, including Drive persistence and the `colab-pretrain` target.
+
+---
+
 ## Essential Commands
 | Command | Purpose |
 |---|---|
@@ -73,6 +79,10 @@ Optional but helpful:
 | `make test` / `pytest` | Run the test suite. |
 | `ruff format .` | Apply code formatting. |
 | `make check-mps` | Print which device (MPS/CUDA/CPU) PyTorch sees. |
+| `make fresh-pretrain` | Fresh corpus → tokenizer → shards → pretrain run (timestamped, M2-friendly defaults). |
+| `make chat RUN=20260127-120000` | Chat with a run checkpoint (defaults to pretrain `ckpt-last.pt`). |
+| `make rlvr-data` | Generate verifiable math prompts for RLVR. |
+| `make rlvr-train RUN=20260127-120000` | Run RLVR from a pretrain checkpoint (math verifier). |
 
 > **Always run:** `ruff check --fix .`, `ruff format .`, and `pytest` before committing changes.
 
@@ -80,7 +90,7 @@ Optional but helpful:
 
 ## Dataset Preparation
 1. Ensure Hugging Face login is active (`huggingface-cli login`).
-2. Inspect `configs/corpus.yaml`. By default it references:
+2. Inspect `configs/corpus_m2.yaml` (default for `make fresh-pretrain`) and `configs/corpus.yaml` (bigger run). They reference:
    - FineWeb-Edu (quality web text slice)
    - Wikipedia snapshot (English)
    - TinyStories (tiny synthetic stories)
@@ -88,7 +98,7 @@ Optional but helpful:
 3. Run the prep script to clean and normalize all active sources:
    ```bash
    python scripts/prepare_corpus.py \
-     --src configs/corpus.yaml \
+     --src configs/corpus_m2.yaml \
      --out data/clean
    ```
    - Output: `data/clean/*.txt` plus metadata JSON for each source.
@@ -97,15 +107,16 @@ Optional but helpful:
 ---
 
 ## Tokenizer Training
-4. Train a custom tokenizer (byte fallback BPE):
+4. Train a tokenizer (default backend: Hugging Face `tokenizers`, Rust):
    ```bash
    python scripts/train_tokenizer.py \
      --input data/clean/*.txt \
      --vocab-size 32000 \
      --out artifacts/tokenizer.json
    ```
-   - Produces `artifacts/tokenizer.json` (merge rules, vocab).
-   - Unigram trainer exposed via `alm.tokenizers.train_unigram` for experimentation.
+   - Produces `artifacts/tokenizer.json` (Hugging Face tokenizer JSON).
+   - For quick iteration on large corpora, add `--max-lines 200000` to sample the corpus before training.
+   - The pure-Python BPE trainer is available via `--backend python` for tiny toy corpora, but it will not scale to large datasets.
 
 ---
 
@@ -163,6 +174,30 @@ Optional but helpful:
       --tokenizer artifacts/tokenizer.json
      ```
    - Want different hyperparameters? Edit `configs/train.yaml` (batch size, accumulation, warmup, scheduler horizon, checkpoint cadence, DataLoader workers).
+
+### Fresh runs (recommended)
+If you want to start completely fresh (new corpus snapshot, tokenizer, packed shards, and run dir):
+```bash
+make dev
+make fresh-pretrain
+make chat RUN=20260127-120000
+```
+`make fresh-pretrain` defaults to `configs/corpus_m2.yaml` and `configs/train_m2.yaml`. To use the larger defaults instead:
+```bash
+make fresh-pretrain CORPUS_CFG=configs/corpus.yaml TRAIN_CFG=configs/train.yaml
+```
+To start with a larger model, set `MODEL_CFG`:
+```bash
+make fresh-pretrain MODEL_CFG=configs/nano.yaml
+```
+
+### RLVR (verifiable rewards)
+After you have a reasonable checkpoint, you can post-train on synthetic verifiable math tasks:
+```bash
+make rlvr-data
+make rlvr-train RUN=20260127-120000
+make chat RUN=20260127-120000 CHECKPOINT=runs/20260127-120000/rlvr/ckpt-last.pt
+```
 
 ### Understanding the Training Progress UI
 When `logging.rich_progress` is `true` (default), the loop renders a Rich status panel:
@@ -337,6 +372,7 @@ python scripts/chat_cli.py \
 - **Hugging Face auth errors:** re-run `huggingface-cli login`, ensure the token has read access.
 - **OOM during training:** lower `micro_batch_size`, increase `gradient_accumulation`, or reduce `--seq-len` when packing.
 - **Slow/broken run:** verify `pip install -e .[dev]` succeeded, run `make check-mps` to confirm device.
+- **PyTorch aborts with `OMP: Error #179 ... SHM2`:** install `libomp` (`brew install libomp`). The Makefile auto-prepends `/opt/homebrew/opt/libomp/lib` (or `/usr/local/opt/libomp/lib`) to `DYLD_LIBRARY_PATH` when present.
 - **Restart training:** delete or move `ckpt-last.pt` if you want a fresh start; otherwise training resumes automatically.
 - **Context length:** the pico config trains on 512-token sequences. If you need longer prompts, increase `training.seq_len`, regenerate `data/packed`, and update `model.max_position_embeddings` before resuming.
 

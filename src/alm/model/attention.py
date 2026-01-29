@@ -10,20 +10,25 @@ from torch.nn import functional as F
 
 from .rope import apply_rope
 
-_CAUSAL_MASK_CACHE: dict[tuple[int, int, str, int | None, torch.dtype], torch.Tensor] = {}
+_CAUSAL_MASK_CACHE: dict[tuple[int, int, int, str, int | None, torch.dtype], torch.Tensor] = {}
 
 
 def get_causal_additive_mask(
-    q_len: int, k_len: int, device: torch.device, dtype: torch.dtype
+    q_len: int,
+    k_len: int,
+    *,
+    past_len: int = 0,
+    device: torch.device,
+    dtype: torch.dtype,
 ) -> torch.Tensor:
-    key = (q_len, k_len, device.type, device.index, dtype)
+    key = (q_len, k_len, past_len, device.type, device.index, dtype)
     cached = _CAUSAL_MASK_CACHE.get(key)
     if cached is not None:
         return cached
 
     neg = -1e4 if dtype in {torch.float16, torch.bfloat16} else -1e9
     mask = torch.full((q_len, k_len), neg, dtype=dtype, device=device)
-    mask = torch.triu(mask, diagonal=1)
+    mask = torch.triu(mask, diagonal=past_len + 1)
     _CAUSAL_MASK_CACHE[key] = mask
     return mask
 
@@ -113,9 +118,14 @@ class MultiHeadAttention(nn.Module):
             attn_scores = torch.matmul(q, k.transpose(-2, -1)) * (1.0 / math.sqrt(self.head_dim))
             q_len = attn_scores.shape[-2]
             k_len = attn_scores.shape[-1]
+            past_len = 0 if past_key_value is None else past_key_value[0].shape[-2]
 
             attn_scores = attn_scores + get_causal_additive_mask(
-                q_len, k_len, attn_scores.device, attn_scores.dtype
+                q_len,
+                k_len,
+                past_len=past_len,
+                device=attn_scores.device,
+                dtype=attn_scores.dtype,
             )
 
             if alibi_bias is not None:

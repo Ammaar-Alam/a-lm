@@ -37,3 +37,25 @@ def test_transformer_cache_progression() -> None:
     logits2, caches2, _ = model(next_ids, past_key_values=caches, use_cache=True)
     assert caches2[0][0].shape[-2] == 2
     assert logits2.shape == (1, 1, cfg.vocab_size)
+
+
+def test_cached_logits_match_full_forward() -> None:
+    cfg = sample_config()
+    cfg.dual_ffn.enabled = False
+    cfg.dropout = 0.0
+    model = TransformerModel(cfg)
+    model.eval()
+
+    input_ids = torch.randint(0, cfg.vocab_size, (1, 6))
+    full_logits, _, _ = model(input_ids, use_cache=False)
+
+    past = None
+    for idx in range(input_ids.size(1)):
+        token = input_ids[:, idx : idx + 1]
+        step_logits, past, _ = model(token, past_key_values=past, use_cache=True)
+        assert torch.allclose(
+            step_logits,
+            full_logits[:, idx : idx + 1, :],
+            atol=1e-5,
+            rtol=1e-4,
+        )

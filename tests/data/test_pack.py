@@ -28,6 +28,7 @@ def test_pack_tokens(tmp_path: Path) -> None:
         shard_size=4,
         out_dir=out_dir,
         eos_token="\n",
+        tokenizer_path=tok_path,
     )
     shards = list(out_dir.glob("shard_*.bin"))
     assert shards, "Expected at least one shard"

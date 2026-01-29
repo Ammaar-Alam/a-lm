@@ -61,6 +61,7 @@ def generate_reply(
     top_k: int,
     top_p: float,
     repetition_penalty: float,
+    stop_strings: list[str],
     device: torch.device,
 ) -> str:
     model.eval()
@@ -69,7 +70,6 @@ def generate_reply(
         input_ids = torch.tensor(generated, dtype=torch.long, device=device).unsqueeze(0)
         past = None
         prompt_len = len(prompt_tokens)
-        newline_token = tokenizer.encode("\n")[-1]
         for _ in range(max_tokens):
             logits, past, _ = model(input_ids, past_key_values=past, use_cache=True)
             next_logits = logits[:, -1, :].squeeze(0)
@@ -81,10 +81,13 @@ def generate_reply(
             token = sample_next_token(next_logits, top_k, top_p, temperature)
             generated.append(token)
             input_ids = torch.tensor([[token]], dtype=torch.long, device=device)
-            if token == newline_token:
-                break
-        reply_tokens = generated[prompt_len:]
-        return tokenizer.decode(reply_tokens).strip()
+            if stop_strings:
+                reply_text = tokenizer.decode(generated[prompt_len:])
+                for stop in stop_strings:
+                    stop_idx = reply_text.find(stop)
+                    if stop_idx != -1:
+                        return reply_text[:stop_idx].strip()
+        return tokenizer.decode(generated[prompt_len:]).strip()
 
 
 def trim_to_context(tokens: list[int], limit: int) -> list[int]:
@@ -111,16 +114,40 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--system", default="You are a helpful assistant.", help="System prompt prefix"
     )
+    parser.add_argument(
+        "--stop",
+        action="append",
+        default=[],
+        help="Stop string (repeatable). Defaults to '\\nUser:' and '\\nSystem:' if omitted.",
+    )
     return parser.parse_args()
 
 
 def build_prompt(history: list[tuple[str, str]], user_message: str) -> str:
-    parts = []
+    system_text = ""
+    turns: list[tuple[str, str]] = []
     for role, content in history:
-        parts.append(f"{role}: {content.strip()}")
-    parts.append(f"User: {user_message.strip()}")
-    parts.append("Assistant: ")
-    return "\n".join(parts)
+        role_lower = role.strip().lower()
+        text = content.strip()
+        if not text:
+            continue
+        if role_lower == "system":
+            system_text = text
+        elif role_lower in {"user", "assistant"}:
+            turns.append((role_lower, text))
+
+    parts: list[str] = []
+    if system_text:
+        parts.append(f"System: {system_text}\n")
+
+    for role, text in turns:
+        if role == "user":
+            parts.append(f"User: {text}\nAssistant: ")
+        else:
+            parts.append(f"{text}\n")
+
+    parts.append(f"User: {user_message.strip()}\nAssistant: ")
+    return "".join(parts)
 
 
 def chat_loop(args: argparse.Namespace) -> None:
@@ -134,6 +161,7 @@ def chat_loop(args: argparse.Namespace) -> None:
 
     max_context = config.max_position_embeddings
     history: list[tuple[str, str]] = [("System", args.system)]
+    stop_strings = args.stop if args.stop else ["\nUser:", "\nSystem:"]
 
     print(f"Loaded model on {device}. Context window ~{config.max_position_embeddings} tokens.")
     print("Type /exit to quit. Press Ctrl+C to abort.")
@@ -166,6 +194,7 @@ def chat_loop(args: argparse.Namespace) -> None:
                 args.top_k,
                 args.top_p,
                 args.repetition_penalty,
+                stop_strings,
                 device,
             )
             history.append(("User", user_message))

@@ -13,7 +13,6 @@ from typing import Any
 import numpy as np
 
 from alm.tokenizers.tokenizer import Tokenizer
-from alm.tokenizers.vocab import Vocabulary
 
 try:  # pragma: no cover - optional dependency
     from rich.progress import (
@@ -33,14 +32,12 @@ def iter_text_files(paths: Sequence[Path]) -> Iterator[str]:
                 yield line.rstrip("\n")
 
 
-_WORKER_TOKENIZER: Tokenizer | None = None
+_WORKER_TOKENIZER: Any | None = None
 
 
-def _worker_init(tokens: list[str]) -> None:
-    vocab = Vocabulary()
-    vocab.extend(tokens)
+def _worker_init(tokenizer_path: str) -> None:
     global _WORKER_TOKENIZER
-    _WORKER_TOKENIZER = Tokenizer(vocab)
+    _WORKER_TOKENIZER = Tokenizer.from_file(Path(tokenizer_path))
 
 
 def _worker_encode(chunk: list[str]) -> list[list[int]]:
@@ -70,9 +67,12 @@ def pack_tokens(
     show_progress: bool = False,
     workers: int | None = None,
     chunk_size: int = 512,
+    tokenizer_path: Path | None = None,
 ) -> dict[str, Any]:
     out_dir.mkdir(parents=True, exist_ok=True)
-    eos_id = tokenizer.encode(eos_token)[-1]
+    eos_ids = tokenizer.encode(eos_token)
+    if not eos_ids:
+        raise ValueError("eos_token encoded to empty sequence")
     buffer: list[int] = []
     shard: list[int] = []
     shard_idx = 0
@@ -143,7 +143,7 @@ def pack_tokens(
             for chunk in _chunk_iterable(text_iter, chunk_size):
                 for token_ids in tokenizer.encode_batch(chunk):
                     buffer.extend(token_ids)
-                    buffer.append(eos_id)
+                    buffer.extend(eos_ids)
                     while len(buffer) >= seq_len:
                         shard.extend(buffer[:seq_len])
                         buffer = buffer[seq_len:]
@@ -151,18 +151,19 @@ def pack_tokens(
                         if len(shard) >= shard_size:
                             flush_shard()
         else:
-            tokens_snapshot = list(tokenizer.vocab.id_to_token)
+            if tokenizer_path is None:
+                raise ValueError("tokenizer_path required when workers > 1")
             ctx = mp.get_context("spawn")
             chunk_iter = _chunk_iterable(text_iter, chunk_size)
             with ctx.Pool(
                 processes=workers,
                 initializer=_worker_init,
-                initargs=(tokens_snapshot,),
+                initargs=(str(tokenizer_path),),
             ) as pool:
                 for encoded_chunk in pool.imap(_worker_encode, chunk_iter, chunksize=1):
                     for token_ids in encoded_chunk:
                         buffer.extend(token_ids)
-                        buffer.append(eos_id)
+                        buffer.extend(eos_ids)
                         while len(buffer) >= seq_len:
                             shard.extend(buffer[:seq_len])
                             buffer = buffer[seq_len:]

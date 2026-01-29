@@ -62,14 +62,23 @@ def generate(
     top_k: int,
     top_p: float,
     repetition_penalty: float,
+    stop_strings: list[str],
     device: torch.device,
 ) -> str:
     model.eval()
     with torch.inference_mode():
         prompt_tokens = tokenizer.encode(prompt)
+        max_context = model.config.max_position_embeddings
+        context_budget = max_context - max_tokens
+        if context_budget <= 0:
+            context_budget = max_context
+        if len(prompt_tokens) > context_budget:
+            prompt_tokens = prompt_tokens[-context_budget:]
+
         generated: list[int] = list(prompt_tokens)
         input_ids = torch.tensor(generated, dtype=torch.long, device=device).unsqueeze(0)
         past = None
+        prompt_len = len(prompt_tokens)
         for _ in range(max_tokens):
             logits, past, _ = model(input_ids, past_key_values=past, use_cache=True)
             next_logits = logits[:, -1, :].squeeze(0)
@@ -81,6 +90,12 @@ def generate(
             next_token = sample_next_token(next_logits, top_k, top_p, temperature)
             generated.append(next_token)
             input_ids = torch.tensor([[next_token]], dtype=torch.long, device=device)
+            if stop_strings:
+                completion = tokenizer.decode(generated[prompt_len:])
+                for stop in stop_strings:
+                    stop_idx = completion.find(stop)
+                    if stop_idx != -1:
+                        return tokenizer.decode(prompt_tokens) + completion[:stop_idx]
         return tokenizer.decode(generated)
 
 
@@ -98,6 +113,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=1.1,
         help=">1.0 discourages repeated tokens (1.0 disables)",
+    )
+    parser.add_argument(
+        "--stop",
+        action="append",
+        default=[],
+        help="Stop string (repeatable). No stopping if omitted.",
     )
     parser.add_argument("--device", default="auto", help="Device to run on (auto/mps/cuda/cpu)")
     return parser.parse_args()
@@ -121,6 +142,7 @@ def main() -> None:
         args.top_k,
         args.top_p,
         args.repetition_penalty,
+        args.stop,
         device,
     )
     print(output)

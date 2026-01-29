@@ -1,0 +1,28 @@
+# larger corpus for colab runs
+sources:
+  fineweb_edu:
+    kind: huggingface
+    dataset: HuggingFaceFW/fineweb-edu
+    split: train
+    streaming: true
+    sample_tokens: 20000000
+    notes: "Medium slice of FineWeb-Edu for colab."
+  wikipedia_en:
+    kind: huggingface
+    dataset: wikimedia/wikipedia
+    config: 20231101.en
+    split: train
+    streaming: true
+    sample_tokens: 20000000
+    notes: "Medium slice of English Wikipedia."
+  tinystories:
+    kind: huggingface
+    dataset: roneneldan/TinyStories
+    split: train
+    streaming: true
+    sample_tokens: 5000000
+    notes: "TinyStories slice for early convergence sanity checks."
+
+cache:
+  base_dir: "${AML_DATA_DIR:-data/cache}"
+
