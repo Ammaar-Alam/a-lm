@@ -25,15 +25,14 @@ If the repo is private, upload a zip to Drive and unzip:
 
 ## 3) Install dependencies
 ```bash
-!pip install -e .[dev]
+%pip install -e . --no-deps
+%pip install -U "huggingface_hub<1.0" "datasets>=2.19,<3" "pyarrow>=15.0.2,<19" \
+  "fsspec>=2025.3.0" "gcsfs>=2025.3.0" "tokenizers>=0.22.0,<=0.23.0"
 ```
 
-If you hit a `PyGILState_Release` crash during dataset prep, upgrade the HF stack in Colab
-using versions that are compatible with Colab’s preinstalled `transformers`:
-```bash
-!pip uninstall -y datasets huggingface_hub pyarrow fsspec gcsfs
-!pip install "huggingface_hub<1.0" "datasets>=2.19,<3.0" "pyarrow>=14,<19" "fsspec==2025.3.0" "gcsfs==2025.3.0"
-```
+Notes:
+- This intentionally does **not** downgrade `numpy` (Colab preinstalls expect `numpy>=2`).
+- If `%pip` prints a warning about a package that was already imported, restart the runtime once.
 
 ## 4) Log into Hugging Face (required for datasets)
 ```python
