@@ -98,13 +98,18 @@ fresh-pretrain:
 		--tokenizer $(TOKENIZER_PATH)
 	@echo "chat: make chat RUN=$(RUN)"
 
+colab-pretrain: CORPUS_CFG = configs/corpus_colab.yaml
+colab-pretrain: TRAIN_CFG = configs/train_colab.yaml
+colab-pretrain: MODEL_CFG = configs/nano.yaml
+colab-pretrain: SEQ_LEN = 512
+colab-pretrain: TOKENIZER_BACKEND = hf
 colab-pretrain:
 	$(MAKE) fresh-pretrain \
-		CORPUS_CFG=configs/corpus_colab.yaml \
-		TRAIN_CFG=configs/train_colab.yaml \
-		MODEL_CFG=configs/nano.yaml \
-		SEQ_LEN=512 \
-		TOKENIZER_BACKEND=hf
+		CORPUS_CFG=$(CORPUS_CFG) \
+		TRAIN_CFG=$(TRAIN_CFG) \
+		MODEL_CFG=$(MODEL_CFG) \
+		SEQ_LEN=$(SEQ_LEN) \
+		TOKENIZER_BACKEND=$(TOKENIZER_BACKEND)
 
 chat:
 	$(PYTHON) scripts/chat_cli.py \
