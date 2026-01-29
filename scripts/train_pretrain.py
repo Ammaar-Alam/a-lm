@@ -357,6 +357,19 @@ def train(args: argparse.Namespace) -> None:
     def configure_precision(
         target: str,
     ) -> tuple[Any, torch.amp.GradScaler, str]:
+        def _autocast(device_type: str, dtype: torch.dtype) -> Any:
+            # Prefer the new API (PyTorch 2.x): torch.amp.autocast(device_type=..., dtype=...)
+            amp = getattr(torch, "amp", None)
+            if amp is not None and hasattr(amp, "autocast"):
+                return amp.autocast(device_type=device_type, dtype=dtype)
+
+            # Fallbacks for older versions
+            if device_type == "cuda":
+                return torch.cuda.amp.autocast(dtype=dtype)
+            if hasattr(torch, "autocast"):
+                return torch.autocast(device_type=device_type, dtype=dtype)
+            return nullcontext()
+
         requested = target
         if requested == "auto":
             requested = "fp16" if device.type in {"cuda", "mps"} else "fp32"
@@ -370,18 +383,18 @@ def train(args: argparse.Namespace) -> None:
         if requested == "fp16":
             if device.type == "cuda":
                 scaler = torch.amp.GradScaler("cuda", enabled=True)
-                ctx = torch.cuda.amp.autocast(device_type="cuda", dtype=torch.float16)
+                ctx = _autocast("cuda", torch.float16)
             elif device.type == "mps":
                 scaler = torch.amp.GradScaler("mps", enabled=True)
-                ctx = torch.autocast(device_type="mps", dtype=torch.float16)
+                ctx = _autocast("mps", torch.float16)
             else:
                 effective = "fp32"
                 ctx = nullcontext()
         elif requested == "bf16":
             if device.type == "cuda":
-                ctx = torch.cuda.amp.autocast(device_type="cuda", dtype=torch.bfloat16)
+                ctx = _autocast("cuda", torch.bfloat16)
             elif device.type == "cpu":
-                ctx = torch.autocast(device_type="cpu", dtype=torch.bfloat16)
+                ctx = _autocast("cpu", torch.bfloat16)
             else:
                 effective = "fp32"
                 ctx = nullcontext()

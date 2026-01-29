@@ -260,9 +260,15 @@ def train(args: argparse.Namespace) -> None:
     print(f"[amp] device={device.type} scaler_enabled={bool(scaler and scaler.is_enabled())}")
 
     def _autocast_ctx() -> Any:
+        amp = getattr(torch, "amp", None)
+        if amp is not None and hasattr(amp, "autocast"):
+            if device.type in {"cuda", "mps"}:
+                return amp.autocast(device_type=device.type, dtype=torch.float16)
+            return nullcontext()
+
         if device.type == "cuda":
-            return torch.cuda.amp.autocast(device_type="cuda", dtype=torch.float16)
-        if device.type == "mps":
+            return torch.cuda.amp.autocast(dtype=torch.float16)
+        if device.type == "mps" and hasattr(torch, "autocast"):
             return torch.autocast(device_type="mps", dtype=torch.float16)
         return nullcontext()
 
