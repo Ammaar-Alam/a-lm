@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import math
 
 import torch
@@ -11,6 +12,14 @@ from torch.nn import functional as F
 from .rope import apply_rope
 
 _CAUSAL_MASK_CACHE: dict[tuple[int, int, int, str, int | None, torch.dtype], torch.Tensor] = {}
+_SDPA_SUPPORTS_GQA = False
+if hasattr(F, "scaled_dot_product_attention"):
+    try:
+        _SDPA_SUPPORTS_GQA = (
+            "enable_gqa" in inspect.signature(F.scaled_dot_product_attention).parameters
+        )
+    except (TypeError, ValueError):  # pragma: no cover - depends on torch build
+        _SDPA_SUPPORTS_GQA = False
 
 
 def get_causal_additive_mask(
@@ -94,9 +103,6 @@ class MultiHeadAttention(nn.Module):
         if use_cache:
             present = (k, v)
 
-        k = repeat_kv(k, self.num_groups)
-        v = repeat_kv(v, self.num_groups)
-
         use_sdpa = (
             self.backend == "sdpa"
             and past_key_value is None
@@ -106,15 +112,27 @@ class MultiHeadAttention(nn.Module):
         )
 
         if use_sdpa:
+            k_attn = k
+            v_attn = v
+            sdpa_kwargs: dict[str, bool] = {}
+            if self.num_groups > 1:
+                if _SDPA_SUPPORTS_GQA and hidden_states.device.type == "cuda":
+                    sdpa_kwargs["enable_gqa"] = True
+                else:
+                    k_attn = repeat_kv(k_attn, self.num_groups)
+                    v_attn = repeat_kv(v_attn, self.num_groups)
             attn_output = F.scaled_dot_product_attention(
                 q,
-                k,
-                v,
+                k_attn,
+                v_attn,
                 attn_mask=None,
                 dropout_p=0.0,
                 is_causal=True,
+                **sdpa_kwargs,
             )
         else:
+            k = repeat_kv(k, self.num_groups)
+            v = repeat_kv(v, self.num_groups)
             attn_scores = torch.matmul(q, k.transpose(-2, -1)) * (1.0 / math.sqrt(self.head_dim))
             q_len = attn_scores.shape[-2]
             k_len = attn_scores.shape[-1]

@@ -388,8 +388,10 @@ def train(args: argparse.Namespace) -> None:
     if warmup_batch is not None and device.type in {"mps", "cuda"}:
         warm_tokens, _ = warmup_batch
         warm_tokens = warm_tokens[:1, : min(128, warm_tokens.size(1))]
-        warm_tokens = warm_tokens.to(device=device, dtype=torch.long, non_blocking=False)
-        with torch.inference_mode(), _autocast_ctx():
+        non_blocking = device.type == "cuda"
+        warm_tokens = warm_tokens.to(device=device, dtype=torch.long, non_blocking=non_blocking)
+        with torch.no_grad(), autocast_ctx:
+            maybe_mark_step_begin(device)
             model(warm_tokens[:, :-1])
 
     criterion = nn.CrossEntropyLoss(ignore_index=-100, label_smoothing=0.05)
