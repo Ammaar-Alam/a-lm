@@ -115,6 +115,10 @@ def _apply_adamw_perf_flags(optimizer: torch.optim.Optimizer, device: torch.devi
         return
     if not _ADAMW_SUPPORTS_FUSED:
         return
+    for state in optimizer.state.values():
+        for key, value in list(state.items()):
+            if torch.is_tensor(value):
+                state[key] = value.to(device=device, non_blocking=True)
     for group in optimizer.param_groups:
         group["fused"] = True
 

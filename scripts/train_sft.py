@@ -142,11 +142,21 @@ def maybe_mark_step_begin(device: torch.device) -> None:
         mark()
 
 
+def move_optimizer_state_to_device(optimizer: torch.optim.Optimizer, device: torch.device) -> None:
+    if device.type != "cuda":
+        return
+    for state in optimizer.state.values():
+        for key, value in list(state.items()):
+            if torch.is_tensor(value):
+                state[key] = value.to(device=device, non_blocking=True)
+
+
 def _apply_adamw_perf_flags(optimizer: torch.optim.Optimizer, device: torch.device) -> None:
     if device.type != "cuda":
         return
     if not _ADAMW_SUPPORTS_FUSED:
         return
+    move_optimizer_state_to_device(optimizer, device)
     for group in optimizer.param_groups:
         group["fused"] = True
 
