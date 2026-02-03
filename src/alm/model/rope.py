@@ -6,6 +6,11 @@ import torch
 
 _ROPE_CACHE: dict[tuple[int, int, float, int, str], tuple[torch.Tensor, torch.Tensor]] = {}
 
+try:
+    import torch._dynamo as _dynamo
+except Exception:  # pragma: no cover - torch may be built without dynamo
+    _dynamo = None  # type: ignore
+
 
 def rotate_half(x: torch.Tensor) -> torch.Tensor:
     x1, x2 = x.chunk(2, dim=-1)
@@ -61,3 +66,9 @@ def apply_rope(x: torch.Tensor, cos: torch.Tensor, sin: torch.Tensor) -> torch.T
         cos = cos.unsqueeze(0)
         sin = sin.unsqueeze(0)
     return (x * cos) + (rotate_half(x) * sin)
+
+
+if _dynamo is not None:  # pragma: no cover - runtime-dependent
+    # RoPE caches can confuse torch.compile + cudagraph reuse when tensors are cached across runs.
+    # Keep this helper in eager mode while still allowing the surrounding model to compile.
+    rope_angles_cached = _dynamo.disable(rope_angles_cached)

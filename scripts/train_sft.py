@@ -131,6 +131,15 @@ def maybe_compile_model(model: nn.Module, device: torch.device) -> nn.Module:
     return compiled
 
 
+def maybe_mark_step_begin(device: torch.device) -> None:
+    if device.type != "cuda":
+        return
+    compiler = getattr(torch, "compiler", None)
+    mark = getattr(compiler, "cudagraph_mark_step_begin", None)
+    if callable(mark):
+        mark()
+
+
 def _apply_adamw_perf_flags(optimizer: torch.optim.Optimizer, device: torch.device) -> None:
     if device.type != "cuda":
         return
@@ -414,6 +423,7 @@ def train(args: argparse.Namespace) -> None:
                 target_frac = float(target_mask.sum()) / max(1, target_mask.numel())
 
                 with autocast_ctx:
+                    maybe_mark_step_begin(device)
                     logits, _, _ = model(inputs)
                     if device.type == "cuda":
                         logits_for_loss = logits
