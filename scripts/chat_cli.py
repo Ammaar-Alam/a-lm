@@ -26,7 +26,18 @@ def resolve_device(name: str | None) -> torch.device:
 def load_checkpoint(checkpoint: Path, device: torch.device) -> tuple[ModelConfig, dict, str | None]:
     payload = torch.load(checkpoint, map_location=device)
     config = ModelConfig.from_dict(payload["config"])
-    return config, payload["model"], payload.get("tokenizer_fingerprint")
+    state = payload["model"]
+    if isinstance(state, dict) and any(
+        isinstance(key, str) and key.startswith("_orig_mod.") for key in state
+    ):
+        stripped: dict = {}
+        for key, value in state.items():
+            if isinstance(key, str) and key.startswith("_orig_mod."):
+                stripped[key[len("_orig_mod.") :]] = value
+            else:
+                stripped[key] = value
+        state = stripped
+    return config, state, payload.get("tokenizer_fingerprint")
 
 
 def sample_next_token(logits: torch.Tensor, top_k: int, top_p: float, temperature: float) -> int:

@@ -27,6 +27,16 @@ def load_checkpoint(checkpoint: Path, device: torch.device) -> tuple[ModelConfig
     payload = torch.load(checkpoint, map_location=device)
     config = ModelConfig.from_dict(payload["config"])
     state = payload["model"]
+    if isinstance(state, dict) and any(
+        isinstance(key, str) and key.startswith("_orig_mod.") for key in state
+    ):
+        stripped: dict = {}
+        for key, value in state.items():
+            if isinstance(key, str) and key.startswith("_orig_mod."):
+                stripped[key[len("_orig_mod.") :]] = value
+            else:
+                stripped[key] = value
+        state = stripped
     return config, state, payload.get("tokenizer_fingerprint")
 
 

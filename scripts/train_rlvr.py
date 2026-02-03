@@ -150,8 +150,13 @@ def save_checkpoint(
     tokenizer_fingerprint: str | None,
     meta: dict[str, Any],
 ) -> None:
+    base_model = getattr(model, "_orig_mod", None)
+    if isinstance(base_model, nn.Module):
+        model_state = base_model.state_dict()
+    else:
+        model_state = model.state_dict()
     payload: dict[str, Any] = {
-        "model": model.state_dict(),
+        "model": model_state,
         "optimizer": optimizer.state_dict(),
         "scheduler": scheduler.state_dict(),
         "step": step,
@@ -171,7 +176,18 @@ def load_checkpoint(
     scheduler: torch.optim.lr_scheduler._LRScheduler,
 ) -> tuple[int, str | None, dict[str, Any]]:
     payload = torch.load(path, map_location="cpu")
-    model.load_state_dict(payload["model"])
+    state = payload["model"]
+    if isinstance(state, dict) and any(
+        isinstance(key, str) and key.startswith("_orig_mod.") for key in state
+    ):
+        stripped: dict = {}
+        for key, value in state.items():
+            if isinstance(key, str) and key.startswith("_orig_mod."):
+                stripped[key[len("_orig_mod.") :]] = value
+            else:
+                stripped[key] = value
+        state = stripped
+    model.load_state_dict(state)
     optimizer.load_state_dict(payload["optimizer"])
     scheduler.load_state_dict(payload["scheduler"])
     return (
@@ -185,6 +201,16 @@ def load_init_checkpoint(path: Path) -> tuple[ModelConfig, dict[str, Any], int, 
     payload = torch.load(path, map_location="cpu")
     cfg = ModelConfig.from_dict(payload["config"])
     state = payload["model"]
+    if isinstance(state, dict) and any(
+        isinstance(key, str) and key.startswith("_orig_mod.") for key in state
+    ):
+        stripped: dict = {}
+        for key, value in state.items():
+            if isinstance(key, str) and key.startswith("_orig_mod."):
+                stripped[key[len("_orig_mod.") :]] = value
+            else:
+                stripped[key] = value
+        state = stripped
     step = int(payload.get("step", 0))
     return cfg, state, step, payload.get("tokenizer_fingerprint")
 

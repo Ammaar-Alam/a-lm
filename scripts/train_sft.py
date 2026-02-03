@@ -8,6 +8,8 @@ import dataclasses
 import inspect
 import math
 import os
+import re
+import shutil
 import time
 from contextlib import nullcontext, suppress
 from pathlib import Path
@@ -232,8 +234,53 @@ def save_checkpoint(
     config: ModelConfig,
     tokenizer_fingerprint: str | None,
 ) -> None:
-    payload = {
-        "model": model.state_dict(),
+    payload = build_checkpoint_payload(
+        model=model,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        step=step,
+        config=config,
+        tokenizer_fingerprint=tokenizer_fingerprint,
+    )
+    atomic_torch_save(payload, path)
+
+
+_CKPT_STEP_RE = re.compile(r"^ckpt-step(?P<step>\d{6})\.pt$")
+
+
+def _unwrap_compiled_model(model: nn.Module) -> nn.Module:
+    orig_mod = getattr(model, "_orig_mod", None)
+    if isinstance(orig_mod, nn.Module):
+        return orig_mod
+    return model
+
+
+def _strip_compile_prefix(state: dict[str, Any], prefix: str = "_orig_mod.") -> dict[str, Any]:
+    if not state:
+        return state
+    if not any(isinstance(key, str) and key.startswith(prefix) for key in state):
+        return state
+    stripped: dict[str, Any] = {}
+    for key, value in state.items():
+        if isinstance(key, str) and key.startswith(prefix):
+            stripped[key[len(prefix) :]] = value
+        else:
+            stripped[key] = value
+    return stripped
+
+
+def build_checkpoint_payload(
+    *,
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    scheduler: torch.optim.lr_scheduler._LRScheduler,
+    step: int,
+    config: ModelConfig,
+    tokenizer_fingerprint: str | None,
+) -> dict[str, Any]:
+    base_model = _unwrap_compiled_model(model)
+    payload: dict[str, Any] = {
+        "model": base_model.state_dict(),
         "optimizer": optimizer.state_dict(),
         "scheduler": scheduler.state_dict(),
         "step": step,
@@ -241,7 +288,92 @@ def save_checkpoint(
     }
     if tokenizer_fingerprint:
         payload["tokenizer_fingerprint"] = tokenizer_fingerprint
-    torch.save(payload, path)
+    return payload
+
+
+def atomic_torch_save(payload: dict[str, Any], path: Path) -> None:
+    tmp_path = path.with_name(f"{path.name}.tmp")
+    tmp_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        torch.save(payload, tmp_path)
+        os.replace(tmp_path, path)
+    except Exception:
+        with suppress(FileNotFoundError):
+            tmp_path.unlink()
+        raise
+
+
+def checkpoint_keep_steps() -> int:
+    """How many step checkpoints to retain (negative = keep all)."""
+    raw = os.getenv("ALM_KEEP_STEP_CHECKPOINTS", "").strip()
+    if not raw:
+        return 8
+    try:
+        return int(raw)
+    except ValueError:
+        return 8
+
+
+def prune_step_checkpoints(output_dir: Path, *, keep: int) -> None:
+    if keep < 0:
+        return
+    checkpoints: list[tuple[int, Path]] = []
+    for path in output_dir.glob("ckpt-step*.pt"):
+        match = _CKPT_STEP_RE.match(path.name)
+        if match is None:
+            continue
+        checkpoints.append((int(match.group("step")), path))
+    checkpoints.sort(key=lambda item: item[0])
+    to_delete = checkpoints if keep == 0 else checkpoints[: max(0, len(checkpoints) - keep)]
+    for _, path in to_delete:
+        with suppress(FileNotFoundError):
+            path.unlink()
+
+
+def save_checkpoint_set(
+    *,
+    output_dir: Path,
+    last_ckpt: Path,
+    model: nn.Module,
+    optimizer: torch.optim.Optimizer,
+    scheduler: torch.optim.lr_scheduler._LRScheduler,
+    step: int,
+    config: ModelConfig,
+    tokenizer_fingerprint: str | None,
+) -> None:
+    keep_steps = checkpoint_keep_steps()
+    payload = build_checkpoint_payload(
+        model=model,
+        optimizer=optimizer,
+        scheduler=scheduler,
+        step=step,
+        config=config,
+        tokenizer_fingerprint=tokenizer_fingerprint,
+    )
+
+    if keep_steps >= 0:
+        prune_step_checkpoints(output_dir, keep=max(0, keep_steps - 1))
+
+    try:
+        atomic_torch_save(payload, last_ckpt)
+        if keep_steps != 0:
+            step_ckpt = output_dir / f"ckpt-step{step:06d}.pt"
+            with suppress(FileNotFoundError):
+                step_ckpt.unlink()
+            try:
+                os.link(last_ckpt, step_ckpt)
+            except OSError:
+                atomic_torch_save(payload, step_ckpt)
+    except Exception as error:
+        try:
+            free = shutil.disk_usage(str(output_dir)).free / (1024**3)
+            print(f"[ckpt] save failed (free={free:.2f}GiB): {error}")
+        except Exception:
+            print(f"[ckpt] save failed: {error}")
+        raise
+
+    if keep_steps >= 0:
+        prune_step_checkpoints(output_dir, keep=keep_steps)
 
 
 def load_checkpoint(
@@ -251,7 +383,10 @@ def load_checkpoint(
     scheduler: torch.optim.lr_scheduler._LRScheduler,
 ) -> tuple[int, str | None]:
     payload = torch.load(path, map_location="cpu")
-    model.load_state_dict(payload["model"])
+    model_state = payload["model"]
+    if isinstance(model_state, dict):
+        model_state = _strip_compile_prefix(model_state)
+    model.load_state_dict(model_state)
     optimizer.load_state_dict(payload["optimizer"])
     scheduler.load_state_dict(payload["scheduler"])
     return int(payload.get("step", 0)), payload.get("tokenizer_fingerprint")
@@ -262,6 +397,8 @@ def load_model_weights(path: Path, model: nn.Module) -> None:
     state = payload.get("model") if isinstance(payload, dict) else None
     if state is None:
         raise ValueError(f"Checkpoint at {path} missing 'model' state")
+    if isinstance(state, dict):
+        state = _strip_compile_prefix(state)
     model.load_state_dict(state)
 
 
@@ -499,46 +636,30 @@ def train(args: argparse.Namespace) -> None:
 
             ckpt_interval = int(training_cfg.get("checkpoint_interval", 1000))
             if step % ckpt_interval == 0 or step == max_steps:
-                save_checkpoint(
-                    output_dir / f"ckpt-step{step:06d}.pt",
-                    model,
-                    optimizer,
-                    scheduler,
-                    step,
-                    model_config,
-                    tokenizer_fingerprint,
-                )
-                save_checkpoint(
-                    last_ckpt,
-                    model,
-                    optimizer,
-                    scheduler,
-                    step,
-                    model_config,
-                    tokenizer_fingerprint,
+                save_checkpoint_set(
+                    output_dir=output_dir,
+                    last_ckpt=last_ckpt,
+                    model=model,
+                    optimizer=optimizer,
+                    scheduler=scheduler,
+                    step=step,
+                    config=model_config,
+                    tokenizer_fingerprint=tokenizer_fingerprint,
                 )
                 print(f"Checkpoint saved at step {step}")
 
     except KeyboardInterrupt:
         print("Training interrupted, saving checkpoint...")
-        save_checkpoint(
-            output_dir / f"ckpt-step{step:06d}-interrupt.pt",
-            model,
-            optimizer,
-            scheduler,
-            step,
-            model_config,
-            tokenizer_fingerprint,
+        payload = build_checkpoint_payload(
+            model=model,
+            optimizer=optimizer,
+            scheduler=scheduler,
+            step=step,
+            config=model_config,
+            tokenizer_fingerprint=tokenizer_fingerprint,
         )
-        save_checkpoint(
-            last_ckpt,
-            model,
-            optimizer,
-            scheduler,
-            step,
-            model_config,
-            tokenizer_fingerprint,
-        )
+        atomic_torch_save(payload, output_dir / f"ckpt-step{step:06d}-interrupt.pt")
+        atomic_torch_save(payload, last_ckpt)
 
 
 def parse_args() -> argparse.Namespace:
