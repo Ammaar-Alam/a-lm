@@ -247,7 +247,9 @@ def maybe_compile_model(model: nn.Module, device: torch.device) -> nn.Module:
     compiler = getattr(torch, "compile", None)
     if compiler is None:
         return model
-    mode = os.getenv("ALM_TORCH_COMPILE_MODE", "reduce-overhead").strip() or "reduce-overhead"
+    # Default to the safer Inductor mode. "reduce-overhead" enables CUDA graphs and can
+    # crash when tensors escape the compiled region (common in training loops).
+    mode = os.getenv("ALM_TORCH_COMPILE_MODE", "default").strip() or "default"
     try:
         compiled = compiler(model, backend="inductor", mode=mode)
     except Exception as error:  # pragma: no cover - depends on torch build
