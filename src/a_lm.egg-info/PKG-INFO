@@ -57,6 +57,7 @@ Dynamic: license-file
 12. [Testing & Linting](#testing--linting)
 13. [Troubleshooting](#troubleshooting)
 14. [Next Steps](#next-steps)
+15. [Colab Guide](#colab-guide)
 
 ---
 
@@ -100,6 +101,12 @@ Optional but helpful:
    huggingface-cli login
    # or export HF_TOKEN=... in your shell/profile
    ```
+
+---
+
+## Colab Guide
+See `docs/colab.md` for a step-by-step Colab notebook setup, including Drive persistence and the `colab-pretrain` target.
+If dataset prep crashes with a `PyGILState_Release` error on Colab, upgrade the HF stack with the pinned versions shown in that guide (keeps `transformers` compatibility).
 
 ---
 

@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import inspect
 import math
+import os
 import time
-from contextlib import nullcontext
+from contextlib import nullcontext, suppress
 from itertools import cycle
 from pathlib import Path
 from typing import Any, TextIO
@@ -204,19 +206,85 @@ def _as_float(value: Any, default: float) -> float:
         return default
 
 
-def build_optimizer(model: nn.Module, cfg: dict[str, Any]) -> torch.optim.Optimizer:
+_ADAMW_SUPPORTS_FUSED = "fused" in inspect.signature(torch.optim.AdamW).parameters
+
+
+def configure_torch_runtime(device: torch.device) -> None:
+    torch.set_float32_matmul_precision("high")
+    if device.type != "cuda":
+        return
+
+    cuda_backend = getattr(torch.backends, "cuda", None)
+    if cuda_backend is not None:
+        matmul = getattr(cuda_backend, "matmul", None)
+        if matmul is not None and hasattr(matmul, "allow_tf32"):
+            matmul.allow_tf32 = True
+        if matmul is not None and hasattr(matmul, "fp32_precision"):
+            with suppress(Exception):  # pragma: no cover - depends on torch build
+                matmul.fp32_precision = "tf32"
+
+        for fn_name in (
+            "enable_flash_sdp",
+            "enable_mem_efficient_sdp",
+            "enable_math_sdp",
+            "enable_cudnn_sdp",
+        ):
+            fn = getattr(cuda_backend, fn_name, None)
+            if callable(fn):
+                with suppress(Exception):  # pragma: no cover - depends on torch build
+                    fn(True)
+
+    cudnn = getattr(torch.backends, "cudnn", None)
+    if cudnn is not None and hasattr(cudnn, "allow_tf32"):
+        cudnn.allow_tf32 = True
+
+
+def maybe_compile_model(model: nn.Module, device: torch.device) -> nn.Module:
+    if device.type != "cuda":
+        return model
+    if os.getenv("ALM_TORCH_COMPILE", "1").lower() in {"0", "false", "no"}:
+        return model
+    compiler = getattr(torch, "compile", None)
+    if compiler is None:
+        return model
+    mode = os.getenv("ALM_TORCH_COMPILE_MODE", "reduce-overhead").strip() or "reduce-overhead"
+    try:
+        compiled = compiler(model, backend="inductor", mode=mode)
+    except Exception as error:  # pragma: no cover - depends on torch build
+        print(f"[compile] disabled (failed): {error}")
+        return model
+    print(f"[compile] enabled backend=inductor mode={mode}")
+    return compiled
+
+
+def _apply_adamw_perf_flags(optimizer: torch.optim.Optimizer, device: torch.device) -> None:
+    if device.type != "cuda":
+        return
+    if not _ADAMW_SUPPORTS_FUSED:
+        return
+    for group in optimizer.param_groups:
+        group["fused"] = True
+
+
+def build_optimizer(
+    model: nn.Module, cfg: dict[str, Any], *, device: torch.device
+) -> torch.optim.Optimizer:
     betas_cfg = cfg.get("betas", (0.9, 0.95))
     if isinstance(betas_cfg, (list, tuple)) and len(betas_cfg) == 2:
         betas = (float(betas_cfg[0]), float(betas_cfg[1]))
     else:
         betas = (0.9, 0.95)
 
+    kwargs: dict[str, Any] = {}
+    if device.type == "cuda" and _ADAMW_SUPPORTS_FUSED:
+        kwargs["fused"] = True
     return torch.optim.AdamW(
         model.parameters(),
         lr=_as_float(cfg.get("lr", 3e-4), 3e-4),
         betas=betas,
         eps=_as_float(cfg.get("eps", 1e-8), 1e-8),
         weight_decay=_as_float(cfg.get("weight_decay", 0.1), 0.1),
+        **kwargs,
     )
 
 
@@ -352,7 +420,7 @@ def train(args: argparse.Namespace) -> None:
     )
     data_iter = cycle(dataloader)
 
-    torch.set_float32_matmul_precision("high")
+    configure_torch_runtime(device)
 
     def configure_precision(
         target: str,
@@ -404,7 +472,6 @@ def train(args: argparse.Namespace) -> None:
         if effective == "fp32":
             scaler = torch.amp.GradScaler(device.type, enabled=False)
             ctx = nullcontext()
-
         return ctx, scaler, effective
 
     autocast_ctx, scaler, precision_used = configure_precision(mixed_precision)
@@ -414,7 +481,7 @@ def train(args: argparse.Namespace) -> None:
         model.enable_gradient_checkpointing()
     optim_cfg = train_config.get("optim", {})
     target_base_lr = _as_float(optim_cfg.get("lr", 3e-4), 3e-4)
-    optimizer = build_optimizer(model, optim_cfg)
+    optimizer = build_optimizer(model, optim_cfg, device=device)
     scheduler = build_scheduler(optimizer, train_config.get("scheduler", {}), max_steps)
 
     if mixed_precision != precision_used:
@@ -491,6 +558,9 @@ def train(args: argparse.Namespace) -> None:
     elif last_ckpt.exists():
         start_step, checkpoint_fp = load_checkpoint(last_ckpt, model, optimizer, scheduler)
         log_event(f"Resumed from {last_ckpt} @ step {start_step}")
+
+    _apply_adamw_perf_flags(optimizer, device)
+    model = maybe_compile_model(model, device)
 
     override_scheduler_lr(optimizer, scheduler, target_base_lr)
     group_lr = [group["lr"] for group in optimizer.param_groups]
