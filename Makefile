@@ -34,6 +34,7 @@ PACKED_DIR ?= data/packed/$(RUN)
 PRETRAIN_OUT ?= runs/$(RUN)/pretrain
 RLVR_DATA ?= data/rlvr/math.jsonl
 RLVR_OUT ?= runs/$(RUN)/rlvr
+RLVR_INIT ?= runs/$(RUN)/pretrain/ckpt-last.pt
 CHECKPOINT ?= runs/$(RUN)/pretrain/ckpt-last.pt
 TOKENIZER ?= artifacts/$(RUN)/tokenizer.json
 
@@ -122,7 +123,7 @@ rlvr-data:
 
 rlvr-train:
 	$(PYTHON) scripts/train_rlvr.py \
-		--init runs/$(RUN)/pretrain/ckpt-last.pt \
+		--init $(RLVR_INIT) \
 		--tokenizer artifacts/$(RUN)/tokenizer.json \
 		--data $(RLVR_DATA) \
 		--out $(RLVR_OUT) \

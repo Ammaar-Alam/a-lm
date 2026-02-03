@@ -12,7 +12,7 @@ drive.mount("/content/drive")
 ```
 
 ```bash
-!git clone https://github.com/alam/a-lm.git /content/drive/MyDrive/a-lm
+!git clone https://github.com/Ammaar-Alam/a-lm.git /content/drive/MyDrive/a-lm
 %cd /content/drive/MyDrive/a-lm
 ```
 
@@ -41,6 +41,8 @@ login()
 ```
 
 ## 5) Start a larger Colab run (nano model + bigger corpus)
+If you already have a previous run on disk (or in a zip), you can skip pretraining and jump straight to SFT. The notebook’s “Start pretraining” cell will auto-detect an existing `runs/<RUN>/pretrain/ckpt-last.pt` + `artifacts/<RUN>/tokenizer.json` and reuse it.
+
 ```bash
 !make colab-pretrain RUN=$(date +%Y%m%d-%H%M%S)
 ```
@@ -56,10 +58,34 @@ Optional knobs (use only if you want to change defaults):
 !make chat RUN=20260127-161044
 ```
 
-## 7) Post-train with RLVR (verifiable rewards)
+## 7) Instruction-tune (SFT) for chat
+Pretraining teaches the model general language modeling, but not chat behavior. SFT is what teaches it to follow the `System/User/Assistant` prompt format used by `scripts/chat_cli.py`.
+
+```bash
+!python3 scripts/prepare_sft.py --out data/sft/20260127-161044/clean.jsonl
+!python3 scripts/pack_sft.py \
+  --tokenizer artifacts/20260127-161044/tokenizer.json \
+  --jsonl data/sft/20260127-161044/clean.jsonl \
+  --out data/sft_packed/20260127-161044 \
+  --seq-len 384 \
+  --shard-size 1000000 \
+  --workers 6 \
+  --chunk-size 64
+!python3 scripts/train_sft.py \
+  --model configs/nano.yaml \
+  --train configs/sft.yaml \
+  --data data/sft_packed/20260127-161044 \
+  --out runs/20260127-161044/sft \
+  --device auto \
+  --init runs/20260127-161044/pretrain/ckpt-last.pt \
+  --tokenizer artifacts/20260127-161044/tokenizer.json
+!make chat RUN=20260127-161044 CHECKPOINT=runs/20260127-161044/sft/ckpt-last.pt
+```
+
+## 8) Post-train with RLVR (verifiable rewards)
 ```bash
 !make rlvr-data
-!make rlvr-train RUN=20260127-161044
+!make rlvr-train RUN=20260127-161044 RLVR_INIT=runs/20260127-161044/sft/ckpt-last.pt
 !make chat RUN=20260127-161044 CHECKPOINT=runs/20260127-161044/rlvr/ckpt-last.pt
 ```
 
