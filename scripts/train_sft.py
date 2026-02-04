@@ -531,6 +531,12 @@ def train(args: argparse.Namespace) -> None:
         f"[lr] base={base_lr:.2e} last_epoch={scheduler.last_epoch} "
         f"group_lrs={[group['lr'] for group in optimizer.param_groups]}"
     )
+    if start_step >= max_steps:
+        print(
+            f"[warn] start_step={start_step} >= max_steps={max_steps}; nothing to train. "
+            "Use --init to reset optimizer/scheduler, or increase max_steps."
+        )
+        return
 
     tokenizer_fingerprint = dataset_fingerprint
 
