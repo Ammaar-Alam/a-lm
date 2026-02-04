@@ -16,6 +16,7 @@ class SourceConfig:
     dataset: str | None = None
     split: str = "train"
     config: str | None = None
+    data_files: str | list[str] | None = None
     streaming: bool = False
     # Optional list of columns to request from the dataset loader.
     # This is especially useful for streaming Parquet-backed datasets where
@@ -24,6 +25,8 @@ class SourceConfig:
     sample_tokens: int | None = None
     sample_articles: int | None = None
     path: str | None = None
+    adapter: str | None = None
+    filter_underage: bool = False
     notes: str | None = None
 
 

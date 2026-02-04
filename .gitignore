@@ -26,6 +26,13 @@ checkpoints/
 # OS files
 .DS_Store
 
+# Secrets / keys
+*.pem
+*.key
+
+# Large archives
+*.tar.gz
+
 # AI/MCP Related Files
 CLAUDE.md
 AGENTS.md
