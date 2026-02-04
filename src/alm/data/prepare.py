@@ -183,7 +183,10 @@ def iter_huggingface_source(cfg: SourceConfig, cache_dir: str | None) -> Iterato
     # avoids hard failures when some shards have schema drift on non-essential
     # fields (e.g. a missing "date" column in certain FineWeb shards).
     columns = cfg.columns
-    if columns is None and cfg.streaming:
+    # Only apply the default "text" projection when we're in the simplest case:
+    # a plain text dataset with no special adapter. Chat-style datasets (PIPPA,
+    # rp-opus, etc.) typically don't have a `text` column.
+    if columns is None and cfg.streaming and not (cfg.adapter or "").strip():
         columns = ["text"]
 
     def _load(with_columns: list[str] | None):
@@ -252,6 +255,13 @@ def extract_text(sample: dict) -> str | None:
 def prepare_source(cfg: SourceConfig, out_dir: Path, cache_dir: str | None = None) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     output_path = out_dir / f"{cfg.name}.txt"
+    metadata_path = out_dir / f"{cfg.name}.json"
+    if output_path.exists() and metadata_path.exists():
+        print(f"[prepare] skip (exists): {cfg.name}", flush=True)
+        return output_path
+
+    tmp_output = output_path.with_suffix(".txt.tmp")
+    tmp_metadata = metadata_path.with_suffix(".json.tmp")
     if cfg.kind == "huggingface":
         iterator = iter_huggingface_source(cfg, cache_dir)
     elif cfg.kind == "local":
@@ -261,7 +271,7 @@ def prepare_source(cfg: SourceConfig, out_dir: Path, cache_dir: str | None = Non
 
     total_lines = 0
     total_chars = 0
-    with output_path.open("w", encoding="utf-8") as writer:
+    with tmp_output.open("w", encoding="utf-8") as writer:
         for line in iterator:
             cleaned = normalize_text(line)
             cleaned = cleaned.replace("\n", " ").replace("\t", " ").strip()
@@ -277,7 +287,9 @@ def prepare_source(cfg: SourceConfig, out_dir: Path, cache_dir: str | None = Non
         "lines": total_lines,
         "chars": total_chars,
     }
-    (out_dir / f"{cfg.name}.json").write_text(json.dumps(metadata, indent=2))
+    tmp_metadata.write_text(json.dumps(metadata, indent=2))
+    tmp_output.replace(output_path)
+    tmp_metadata.replace(metadata_path)
     return output_path
 
 
