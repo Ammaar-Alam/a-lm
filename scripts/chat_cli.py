@@ -41,13 +41,15 @@ def load_checkpoint(checkpoint: Path, device: torch.device) -> tuple[ModelConfig
 
 
 def sample_next_token(logits: torch.Tensor, top_k: int, top_p: float, temperature: float) -> int:
-    logits = logits / max(temperature, 1e-5)
+    scaled = logits / max(temperature, 1e-5)
+    if top_k <= 0 and not (0.0 < top_p < 1.0):
+        return int(torch.argmax(scaled).item())
     if top_k > 0:
-        values, indices = torch.topk(logits, top_k)
+        values, indices = torch.topk(scaled, top_k)
         probs = torch.softmax(values, dim=-1)
         choice = torch.multinomial(probs, num_samples=1)
         return int(indices[choice])
-    probs = torch.softmax(logits, dim=-1)
+    probs = torch.softmax(scaled, dim=-1)
     if 0.0 < top_p < 1.0:
         sorted_probs, sorted_indices = torch.sort(probs, descending=True)
         cumulative = torch.cumsum(sorted_probs, dim=-1)
@@ -183,7 +185,7 @@ def chat_loop(args: argparse.Namespace) -> None:
     stop_strings = args.stop if args.stop else ["\nUser:", "\nSystem:"]
 
     print(f"Loaded model on {device}. Context window ~{config.max_position_embeddings} tokens.")
-    print("Type /exit to quit. Press Ctrl+C to abort.")
+    print("Type /exit to quit, /reset to clear history. Press Ctrl+C to abort.")
 
     try:
         while True:
@@ -196,6 +198,10 @@ def chat_loop(args: argparse.Namespace) -> None:
                 continue
             if user_message.lower() in {"/exit", "quit", ":q"}:
                 break
+            if user_message.lower() in {"/reset", "/restart", "/clear"}:
+                history = [("System", args.system)]
+                print("History cleared.")
+                continue
 
             prompt_text = build_prompt(history, user_message)
             prompt_tokens = tokenizer.encode(prompt_text)
