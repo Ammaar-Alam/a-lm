@@ -26,16 +26,31 @@ _PROMPT_TOKENS = {
 }
 
 _WORKER_TOKENIZER: Any | None = None
+_WORKER_DEFAULT_SYSTEM_PROMPT: str | None = None
+_WORKER_EOT_TOKEN: str | None = None
 
 
-def _worker_init(tokenizer_path: str) -> None:
+def _worker_init(
+    tokenizer_path: str,
+    default_system_prompt: str | None,
+    eot_token: str | None,
+) -> None:
     global _WORKER_TOKENIZER
+    global _WORKER_DEFAULT_SYSTEM_PROMPT
+    global _WORKER_EOT_TOKEN
     _WORKER_TOKENIZER = Tokenizer.from_file(Path(tokenizer_path))
+    _WORKER_DEFAULT_SYSTEM_PROMPT = default_system_prompt
+    _WORKER_EOT_TOKEN = eot_token
 
 
-def _conversation_to_segments(conversation: dict[str, Any]) -> list[tuple[str, int]]:
+def _conversation_to_segments(
+    conversation: dict[str, Any],
+    *,
+    default_system_prompt: str | None,
+    eot_token: str | None,
+) -> list[tuple[str, int]]:
     segments: list[tuple[str, int]] = []
-    system = conversation.get("system")
+    system = conversation.get("system") or default_system_prompt
     if system:
         segments.append((_PROMPT_TOKENS["system"].format(text=system), 0))
     for turn in conversation.get("turns", []):
@@ -46,7 +61,10 @@ def _conversation_to_segments(conversation: dict[str, Any]) -> list[tuple[str, i
         if role == "user":
             segments.append((_PROMPT_TOKENS["user"].format(text=text), 0))
         elif role == "assistant":
-            segments.append((_PROMPT_TOKENS["assistant"].format(text=text), 1))
+            assistant_text = _PROMPT_TOKENS["assistant"].format(text=text)
+            if eot_token:
+                assistant_text = f"{assistant_text}{eot_token}\n"
+            segments.append((assistant_text, 1))
     return segments
 
 
@@ -65,7 +83,11 @@ def _encode_segments(segments: list[tuple[str, int]]) -> tuple[list[int], list[i
 
 
 def _encode_conversation(conversation: dict[str, Any]) -> tuple[list[int], list[int]]:
-    segments = _conversation_to_segments(conversation)
+    segments = _conversation_to_segments(
+        conversation,
+        default_system_prompt=_WORKER_DEFAULT_SYSTEM_PROMPT,
+        eot_token=_WORKER_EOT_TOKEN,
+    )
     if not segments:
         return [], []
     ids, mask = _encode_segments(segments)
@@ -98,6 +120,10 @@ def pack_sft(
     workers: int | None = None,
     chunk_size: int = 64,
     tokenizer_path: Path | None = None,
+    pad_token_id: int = 0,
+    drop_mid_assistant: bool = True,
+    default_system_prompt: str | None = None,
+    eot_token: str | None = "<|eot|>",
 ) -> dict[str, Any]:
     out_dir.mkdir(parents=True, exist_ok=True)
     total_tokens = 0
@@ -157,8 +183,22 @@ def pack_sft(
         start_idx = 0
         while start_idx < len(ids):
             end_idx = min(start_idx + seq_len, len(ids))
-            token_buffer.extend(ids[start_idx:end_idx])
-            mask_buffer.extend(mask[start_idx:end_idx])
+            chunk_ids = ids[start_idx:end_idx]
+            chunk_mask = mask[start_idx:end_idx]
+            real_len = end_idx - start_idx
+            if real_len < seq_len:
+                pad_len = seq_len - real_len
+                chunk_ids = chunk_ids + [pad_token_id] * pad_len
+                chunk_mask = chunk_mask + [0] * pad_len
+            if not any(chunk_mask):
+                start_idx = end_idx
+                continue
+            if drop_mid_assistant and bool(chunk_mask[0]):
+                start_idx = end_idx
+                continue
+
+            token_buffer.extend(chunk_ids)
+            mask_buffer.extend(chunk_mask)
             total_tokens += end_idx - start_idx
             start_idx = end_idx
             if len(token_buffer) >= shard_size:
@@ -180,7 +220,9 @@ def pack_sft(
             raise ValueError("tokenizer_path required when workers > 1")
         ctx = mp.get_context("spawn")
         with ctx.Pool(
-            processes=workers, initializer=_worker_init, initargs=(str(tokenizer_path),)
+            processes=workers,
+            initializer=_worker_init,
+            initargs=(str(tokenizer_path), default_system_prompt, eot_token),
         ) as pool:
             for batch in chunk_iterator(iterator):
                 for ids, mask in pool.imap(_encode_conversation, batch, chunksize=1):
@@ -189,6 +231,10 @@ def pack_sft(
     else:
         global _WORKER_TOKENIZER
         _WORKER_TOKENIZER = tokenizer
+        global _WORKER_DEFAULT_SYSTEM_PROMPT
+        _WORKER_DEFAULT_SYSTEM_PROMPT = default_system_prompt
+        global _WORKER_EOT_TOKEN
+        _WORKER_EOT_TOKEN = eot_token
         for conversation in iterator:
             ids, mask = _encode_conversation(conversation)
             if ids:
@@ -209,6 +255,8 @@ def pack_sft(
         "masks": mask_paths,
         "dtype": np.dtype(token_dtype).name,
         "tokenizer_fingerprint": tokenizer.fingerprint,
+        "eot_token": eot_token,
+        "default_system_prompt": default_system_prompt,
     }
     (out_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
     return metadata

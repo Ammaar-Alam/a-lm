@@ -136,6 +136,11 @@ def parse_args() -> argparse.Namespace:
         "--system", default="You are a helpful assistant.", help="System prompt prefix"
     )
     parser.add_argument(
+        "--eot-token",
+        default="",
+        help="Optional end-of-turn marker (must match SFT packing) to stop generation.",
+    )
+    parser.add_argument(
         "--stop",
         action="append",
         default=[],
@@ -144,7 +149,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def build_prompt(history: list[tuple[str, str]], user_message: str) -> str:
+def build_prompt(history: list[tuple[str, str]], user_message: str, eot_token: str | None) -> str:
     system_text = ""
     turns: list[tuple[str, str]] = []
     for role, content in history:
@@ -166,6 +171,8 @@ def build_prompt(history: list[tuple[str, str]], user_message: str) -> str:
             parts.append(f"User: {text}\nAssistant: ")
         else:
             parts.append(f"{text}\n")
+            if eot_token:
+                parts.append(f"{eot_token}\n")
 
     parts.append(f"User: {user_message.strip()}\nAssistant: ")
     return "".join(parts)
@@ -182,7 +189,8 @@ def chat_loop(args: argparse.Namespace) -> None:
 
     max_context = config.max_position_embeddings
     history: list[tuple[str, str]] = [("System", args.system)]
-    stop_strings = args.stop if args.stop else ["\nUser:", "\nSystem:"]
+    eot_token = args.eot_token.strip() or None
+    stop_strings = args.stop or ([eot_token] if eot_token else []) + ["\nUser:", "\nSystem:"]
 
     print(f"Loaded model on {device}. Context window ~{config.max_position_embeddings} tokens.")
     print("Type /exit to quit, /reset to clear history. Press Ctrl+C to abort.")
@@ -203,7 +211,7 @@ def chat_loop(args: argparse.Namespace) -> None:
                 print("History cleared.")
                 continue
 
-            prompt_text = build_prompt(history, user_message)
+            prompt_text = build_prompt(history, user_message, eot_token)
             prompt_tokens = tokenizer.encode(prompt_text)
             context_budget = max_context - args.max_response
             if context_budget <= 0:

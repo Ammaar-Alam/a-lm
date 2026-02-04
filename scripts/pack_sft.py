@@ -21,6 +21,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workers", type=int, help="Number of encoding workers")
     parser.add_argument("--chunk-size", type=int, default=64, help="Conversations per worker batch")
     parser.add_argument("--no-progress", action="store_true", help="Disable live progress display")
+    parser.add_argument(
+        "--system-prompt",
+        help="Default system prompt to inject into conversations missing a system field.",
+    )
+    parser.add_argument(
+        "--eot-token",
+        default="<|eot|>",
+        help="End-of-turn marker appended after assistant messages (set to empty to disable).",
+    )
+    parser.add_argument(
+        "--keep-mid-assistant",
+        action="store_true",
+        help="Keep sequences that start mid-assistant (not recommended for chat fine-tuning).",
+    )
     return parser.parse_args()
 
 
@@ -38,6 +52,9 @@ def main() -> None:
         workers=args.workers,
         chunk_size=args.chunk_size,
         tokenizer_path=Path(args.tokenizer),
+        drop_mid_assistant=not args.keep_mid_assistant,
+        default_system_prompt=args.system_prompt,
+        eot_token=args.eot_token or None,
     )
     print(json.dumps(metadata, indent=2))
 
