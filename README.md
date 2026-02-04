@@ -258,17 +258,19 @@ When you scale to longer runs, update `training.max_steps`, `scheduler.max_steps
      --tokenizer artifacts/tokenizer.json \
      --jsonl data/sft/clean.jsonl \
      --out data/sft_packed \
-     --seq-len 384 \
+     --seq-len 2048 \
      --shard-size 1000000 \
      --workers 6 \
-     --chunk-size 64
+     --chunk-size 64 \
+     --system-prompt "You are a helpful assistant." \
+     --eot-token "<|eot|>"
    ```
 3. Fine-tune from your preferred pretraining checkpoint:
    ```bash
   unset PYTORCH_MPS_FAST_MATH || true
   python scripts/train_sft.py \
-    --model configs/pico_sft.yaml \
-    --train configs/sft.yaml \
+    --model configs/pico.yaml \
+    --train configs/sft_2048.yaml \
     --data data/sft_packed \
     --out runs/pico-sft \
     --device auto \
@@ -281,8 +283,8 @@ When you scale to longer runs, update `training.max_steps`, `scheduler.max_steps
   ```bash
   unset PYTORCH_MPS_FAST_MATH || true
   python scripts/train_sft.py \
-    --model configs/pico_sft.yaml \
-    --train configs/sft.yaml \
+    --model configs/pico.yaml \
+    --train configs/sft_2048.yaml \
     --data data/sft_packed \
     --out runs/pico-sft \
     --device auto \
@@ -330,6 +332,7 @@ python scripts/chat_cli.py \
     --checkpoint runs/pico-sft/ckpt-last.pt \
     --tokenizer artifacts/tokenizer.json \
     --device auto \
+    --eot-token "<|eot|>" \
     --temperature 0.7 \
     --top-k 40 \
     --top-p 0.95 \
@@ -337,7 +340,26 @@ python scripts/chat_cli.py \
 ```
 
 - Type into the `you>` prompt; enter `/exit` or hit `Ctrl+C` when you’re done.
-- The script keeps prior turns within the effective context window (~512 tokens with the default packed dataset). To extend chats, repack `data/packed` with a larger `--seq-len` and raise `model.max_position_embeddings` in your config before resuming training.
+- Use `/reset` to clear history between qualitative tests.
+- The script keeps prior turns within the effective context window (~2048 tokens when using `--seq-len 2048`). To extend chats further, repack with a larger `--seq-len` and raise `model.max_position_embeddings` in your config before resuming training.
+
+### Quick Qualitative Eval
+Run a small default prompt set (greedy) to compare checkpoints:
+```bash
+python scripts/eval_chat.py \
+  --checkpoint runs/pico-sft/ckpt-last.pt \
+  --tokenizer artifacts/tokenizer.json \
+  --device auto \
+  --system "You are a helpful assistant." \
+  --eot-token "<|eot|>" \
+  --temperature 0 --top-k 0 --top-p 0 --repetition-penalty 1 \
+  --max-response 128
+```
+
+Inspect packed SFT sequences (to confirm prompt template + masks look right):
+```bash
+python scripts/inspect_sft_pack.py --data data/sft_packed --tokenizer artifacts/tokenizer.json --num 3
+```
 
 ---
 

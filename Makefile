@@ -1,7 +1,7 @@
 PYTHON ?= python3
 PIP ?= $(PYTHON) -m pip
 
-.PHONY: dev install lint format test clean check-mps train-pico fresh-pretrain colab-pretrain chat rlvr-data rlvr-train sft-prepare sft-pack sft-train
+.PHONY: dev install lint format test clean check-mps train-pico fresh-pretrain colab-pretrain chat rlvr-data rlvr-train sft-prepare sft-pack sft-train eval-chat inspect-sft
 
 export PYTHONPATH := $(CURDIR)/src:$(PYTHONPATH)
 
@@ -37,6 +37,15 @@ RLVR_OUT ?= runs/$(RUN)/rlvr
 RLVR_INIT ?= runs/$(RUN)/pretrain/ckpt-last.pt
 CHECKPOINT ?= runs/$(RUN)/pretrain/ckpt-last.pt
 TOKENIZER ?= artifacts/$(RUN)/tokenizer.json
+
+SFT_SYSTEM ?= You are a helpful assistant.
+SFT_JSONL ?= data/sft/$(RUN)/clean.jsonl
+SFT_PACKED_DIR ?= data/sft_packed/$(RUN)
+SFT_SEQ_LEN ?= 2048
+SFT_TRAIN_CFG ?= configs/sft_2048.yaml
+SFT_OUT ?= runs/$(RUN)/sft
+SFT_INIT ?= runs/$(RUN)/pretrain/ckpt-last.pt
+SFT_EOT ?= <|eot|>
 
 dev: install
 	pre-commit install
@@ -130,28 +139,43 @@ rlvr-train:
 		--device auto
 
 sft-prepare:
-	python scripts/prepare_sft.py --out data/sft/clean.jsonl
+	python scripts/prepare_sft.py --out $(SFT_JSONL)
 
 sft-pack:
 	python scripts/pack_sft.py \
-		--tokenizer artifacts/tokenizer.json \
-		--jsonl data/sft/clean.jsonl \
-		--out data/sft_packed \
-		--seq-len 384 \
+		--tokenizer $(TOKENIZER) \
+		--jsonl $(SFT_JSONL) \
+		--out $(SFT_PACKED_DIR) \
+		--seq-len $(SFT_SEQ_LEN) \
 		--shard-size 1000000 \
 		--workers 6 \
-		--chunk-size 64
+		--chunk-size 64 \
+		--system-prompt "$(SFT_SYSTEM)" \
+		--eot-token "$(SFT_EOT)"
 
 sft-train:
 	unset PYTORCH_MPS_FAST_MATH || true; \
 	python scripts/train_sft.py \
-		--model configs/pico_sft.yaml \
-		--train configs/sft.yaml \
-		--data data/sft_packed \
-		--out runs/pico-sft \
+		--model $(MODEL_CFG) \
+		--train $(SFT_TRAIN_CFG) \
+		--data $(SFT_PACKED_DIR) \
+		--out $(SFT_OUT) \
 		--device auto \
-		--init runs/pico-pretrain/ckpt-last.pt \
-		--tokenizer artifacts/tokenizer.json
+		--init $(SFT_INIT) \
+		--tokenizer $(TOKENIZER)
+
+eval-chat:
+	python scripts/eval_chat.py \
+		--checkpoint $(SFT_OUT)/ckpt-last.pt \
+		--tokenizer $(TOKENIZER) \
+		--device auto \
+		--system "$(SFT_SYSTEM)" \
+		--eot-token "$(SFT_EOT)" \
+		--temperature 0 --top-k 0 --top-p 0 --repetition-penalty 1 \
+		--max-response 128
+
+inspect-sft:
+	python scripts/inspect_sft_pack.py --data $(SFT_PACKED_DIR) --tokenizer $(TOKENIZER) --num 3
 
 clean:
 	rm -rf __pycache__ src/**/__pycache__ tests/__pycache__ .pytest_cache .mypy_cache .ruff_cache htmlcov .coverage

@@ -67,13 +67,15 @@ Pretraining teaches the model general language modeling, but not chat behavior. 
   --tokenizer artifacts/20260127-161044/tokenizer.json \
   --jsonl data/sft/20260127-161044/clean.jsonl \
   --out data/sft_packed/20260127-161044 \
-  --seq-len 384 \
+  --seq-len 2048 \
   --shard-size 1000000 \
   --workers 6 \
-  --chunk-size 64
+  --chunk-size 64 \
+  --system-prompt "You are a helpful assistant." \
+  --eot-token "<|eot|>"
 !python3 scripts/train_sft.py \
   --model configs/nano.yaml \
-  --train configs/sft.yaml \
+  --train configs/sft_2048.yaml \
   --data data/sft_packed/20260127-161044 \
   --out runs/20260127-161044/sft \
   --device auto \
