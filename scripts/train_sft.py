@@ -543,7 +543,9 @@ def train(args: argparse.Namespace) -> None:
             maybe_mark_step_begin(device)
             model(warm_tokens[:, :-1])
 
-    criterion = nn.CrossEntropyLoss(ignore_index=-100, label_smoothing=0.05)
+    label_smoothing = float(training_cfg.get("label_smoothing", 0.05))
+    criterion = nn.CrossEntropyLoss(ignore_index=-100, label_smoothing=label_smoothing)
+    print(f"[loss] label_smoothing={label_smoothing:g}")
     model.train()
 
     ema_loss: float | None = None

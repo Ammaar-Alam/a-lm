@@ -15,6 +15,7 @@ training:
   gradient_accumulation: 16
   global_batch_size: 16
   seq_len: 2048
+  label_smoothing: 0.0
   checkpoint_interval: 250
   gradient_clip_norm: 0.5
   mixed_precision: fp16
