@@ -122,6 +122,8 @@ def pack_sft(
     tokenizer_path: Path | None = None,
     pad_token_id: int = 0,
     drop_mid_assistant: bool = True,
+    min_mask_frac: float = 0.0,
+    max_mask_frac: float = 1.0,
     default_system_prompt: str | None = None,
     eot_token: str | None = "<|eot|>",
 ) -> dict[str, Any]:
@@ -133,6 +135,12 @@ def pack_sft(
     input_paths: list[str] = []
     mask_paths: list[str] = []
     token_dtype = np.uint16 if tokenizer.vocab_size <= 65535 else np.uint32
+    dropped_mid_assistant = 0
+    dropped_mask_ratio = 0
+    min_mask_frac = max(0.0, min(1.0, float(min_mask_frac)))
+    max_mask_frac = max(0.0, min(1.0, float(max_mask_frac)))
+    if min_mask_frac > max_mask_frac:
+        min_mask_frac, max_mask_frac = max_mask_frac, min_mask_frac
 
     if workers is None:
         workers = min(os.cpu_count() or 1, 6)
@@ -178,6 +186,7 @@ def pack_sft(
 
     def add_sequence(ids: list[int], mask: list[int]) -> None:
         nonlocal token_buffer, mask_buffer, total_tokens
+        nonlocal dropped_mid_assistant, dropped_mask_ratio
         if not ids or not any(mask):
             return
         start_idx = 0
@@ -194,6 +203,13 @@ def pack_sft(
                 start_idx = end_idx
                 continue
             if drop_mid_assistant and bool(chunk_mask[0]):
+                dropped_mid_assistant += 1
+                start_idx = end_idx
+                continue
+
+            mask_frac = float(sum(chunk_mask)) / float(len(chunk_mask))
+            if mask_frac < min_mask_frac or mask_frac > max_mask_frac:
+                dropped_mask_ratio += 1
                 start_idx = end_idx
                 continue
 
@@ -257,6 +273,10 @@ def pack_sft(
         "tokenizer_fingerprint": tokenizer.fingerprint,
         "eot_token": eot_token,
         "default_system_prompt": default_system_prompt,
+        "min_mask_frac": min_mask_frac,
+        "max_mask_frac": max_mask_frac,
+        "dropped_mid_assistant": dropped_mid_assistant,
+        "dropped_mask_ratio": dropped_mask_ratio,
     }
     (out_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))
     return metadata

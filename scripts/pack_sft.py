@@ -35,6 +35,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Keep sequences that start mid-assistant (not recommended for chat fine-tuning).",
     )
+    parser.add_argument(
+        "--min-mask-frac",
+        type=float,
+        default=0.05,
+        help="Minimum assistant-token fraction per sequence (default: 0.05).",
+    )
+    parser.add_argument(
+        "--max-mask-frac",
+        type=float,
+        default=0.75,
+        help="Maximum assistant-token fraction per sequence (default: 0.75).",
+    )
     return parser.parse_args()
 
 
@@ -53,6 +65,8 @@ def main() -> None:
         chunk_size=args.chunk_size,
         tokenizer_path=Path(args.tokenizer),
         drop_mid_assistant=not args.keep_mid_assistant,
+        min_mask_frac=args.min_mask_frac,
+        max_mask_frac=args.max_mask_frac,
         default_system_prompt=args.system_prompt,
         eot_token=args.eot_token or None,
     )

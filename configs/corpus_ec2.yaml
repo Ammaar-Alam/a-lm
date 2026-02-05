@@ -1,25 +1,21 @@
-# EC2-focused corpus with larger general web + chat convos
-#
-# Notes:
-# - `sample_tokens` counts whitespace-separated words, not tokenizer tokens.
-# - Keep samples conservative to fit within ~100GB disks (clean text + packed shards + checkpoints).
-# - rp-opus is a gated dataset; you must have HF access configured (HF_TOKEN / huggingface-cli login).
+# EC2 corpus profile.
+# sample_tokens are approximate word counts.
 sources:
   fineweb_edu:
     kind: huggingface
     dataset: HuggingFaceFW/fineweb-edu
     split: train
     streaming: true
-    sample_tokens: 200000000
-    notes: "High-quality educational web text slice."
+    sample_tokens: 120000000
+    notes: "High-quality web text."
 
   openwebtext2:
     kind: huggingface
     dataset: Geralt-Targaryen/openwebtext2
     split: train
     streaming: true
-    sample_tokens: 200000000
-    notes: "General web text (OpenWebText2); stream + sample to manage disk."
+    sample_tokens: 100000000
+    notes: "General web text."
 
   wikipedia_en:
     kind: huggingface
@@ -27,8 +23,8 @@ sources:
     config: 20231101.en
     split: train
     streaming: true
-    sample_tokens: 150000000
-    notes: "English Wikipedia slice."
+    sample_tokens: 80000000
+    notes: "Factual reference text."
 
   pippa_cleaned:
     kind: huggingface
@@ -37,8 +33,8 @@ sources:
     streaming: true
     adapter: pippa
     filter_underage: true
-    sample_tokens: 50000000
-    notes: "Chat logs (may include NSFW)."
+    sample_tokens: 320000000
+    notes: "Dialogue/mature style corpus."
 
   rp_opus:
     kind: huggingface
@@ -48,16 +44,16 @@ sources:
     data_files: messages_remaining.jsonl
     adapter: rp_opus
     filter_underage: true
-    sample_tokens: 50000000
-    notes: "Chat conversations (gated); use messages_remaining.jsonl to avoid <think> traces."
+    sample_tokens: 320000000
+    notes: "Roleplay/dialog corpus (gated)."
 
   tinystories:
     kind: huggingface
     dataset: roneneldan/TinyStories
     split: train
     streaming: true
-    sample_tokens: 20000000
-    notes: "Small amount for early convergence sanity checks; keep low weight."
+    sample_tokens: 10000000
+    notes: "Small short-form regularizer."
 
 cache:
   base_dir: "${AML_DATA_DIR:-data/cache}"

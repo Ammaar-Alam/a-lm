@@ -13,8 +13,8 @@ endif
 RUN ?= $(shell date +%Y%m%d-%H%M%S)
 RUN := $(RUN)
 
-CORPUS_CFG ?= configs/corpus.yaml
-MODEL_CFG ?= configs/pico.yaml
+CORPUS_CFG ?= configs/corpus_ec2.yaml
+MODEL_CFG ?= configs/nano.yaml
 TRAIN_CFG ?= configs/train.yaml
 
 SEQ_LEN ?= 512
@@ -39,6 +39,7 @@ CHECKPOINT ?= runs/$(RUN)/pretrain/ckpt-last.pt
 TOKENIZER ?= artifacts/$(RUN)/tokenizer.json
 
 SFT_SYSTEM ?= You are a helpful assistant.
+SFT_INCLUDE ?= ultrachat oasst1
 SFT_JSONL ?= data/sft/$(RUN)/clean.jsonl
 SFT_FILTERED_JSONL ?= data/sft/$(RUN)/clean.filtered.jsonl
 SFT_PACKED_DIR ?= data/sft_packed/$(RUN)
@@ -47,6 +48,8 @@ SFT_TRAIN_CFG ?= configs/sft_2048.yaml
 SFT_OUT ?= runs/$(RUN)/sft
 SFT_INIT ?= runs/$(RUN)/pretrain/ckpt-last.pt
 SFT_EOT ?= <|eot|>
+SFT_MIN_MASK_FRAC ?= 0.05
+SFT_MAX_MASK_FRAC ?= 0.75
 
 dev: install
 	pre-commit install
@@ -140,13 +143,18 @@ rlvr-train:
 		--device auto
 
 sft-prepare:
-	$(PYTHON) scripts/prepare_sft.py --out $(SFT_JSONL)
+	$(PYTHON) scripts/prepare_sft.py --include $(SFT_INCLUDE) --out $(SFT_JSONL)
 
 sft-filter:
 	$(PYTHON) scripts/filter_sft.py \
 		--in $(SFT_JSONL) \
 		--out $(SFT_FILTERED_JSONL) \
-		--drop-refusals
+		--drop-refusals \
+		--drop-repetition \
+		--min-alpha-ratio 0.35 \
+		--min-assistant-words 3 \
+		--max-user-assistant-word-ratio 12 \
+		--drop-assistant-regex "\\bhowever, i can provide\\b"
 
 sft-pack:
 	$(PYTHON) scripts/pack_sft.py \
@@ -157,6 +165,8 @@ sft-pack:
 		--shard-size 1000000 \
 		--workers 6 \
 		--chunk-size 64 \
+		--min-mask-frac $(SFT_MIN_MASK_FRAC) \
+		--max-mask-frac $(SFT_MAX_MASK_FRAC) \
 		--system-prompt "$(SFT_SYSTEM)" \
 		--eot-token "$(SFT_EOT)"
 

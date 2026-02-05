@@ -135,7 +135,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--include",
         nargs="+",
-        default=["oasst1", "ultrachat", "dolly"],
+        default=["ultrachat", "oasst1"],
         help="Datasets to include (oasst1, ultrachat, dolly)",
     )
     parser.add_argument(

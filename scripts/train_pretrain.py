@@ -445,16 +445,20 @@ def train(args: argparse.Namespace) -> None:
     log_flush = bool(log_cfg.get("log_file_flush", True))
 
     num_workers = int(training_cfg.get("dataloader_workers", 0))
-    dataloader = DataLoader(
-        dataset,
-        batch_size=micro_batch_size,
-        shuffle=True,
-        drop_last=True,
-        collate_fn=collate_tokens,
-        num_workers=num_workers,
-        persistent_workers=num_workers > 0,
-        pin_memory=device.type == "cuda",
-    )
+    prefetch_factor = int(training_cfg.get("prefetch_factor", 2))
+    dataloader_kwargs: dict[str, Any] = {
+        "dataset": dataset,
+        "batch_size": micro_batch_size,
+        "shuffle": True,
+        "drop_last": True,
+        "collate_fn": collate_tokens,
+        "num_workers": num_workers,
+        "persistent_workers": num_workers > 0,
+        "pin_memory": device.type == "cuda",
+    }
+    if num_workers > 0:
+        dataloader_kwargs["prefetch_factor"] = prefetch_factor
+    dataloader = DataLoader(**dataloader_kwargs)
     data_iter = cycle(dataloader)
 
     configure_torch_runtime(device)
@@ -477,7 +481,12 @@ def train(args: argparse.Namespace) -> None:
 
         requested = target
         if requested == "auto":
-            requested = "fp16" if device.type in {"cuda", "mps"} else "fp32"
+            if device.type == "cuda":
+                requested = "bf16"
+            elif device.type == "mps":
+                requested = "fp16"
+            else:
+                requested = "fp32"
         if requested not in {"fp32", "fp16", "bf16"}:
             raise ValueError(f"Unsupported mixed_precision='{target}'")
 

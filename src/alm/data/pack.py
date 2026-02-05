@@ -78,6 +78,7 @@ def pack_tokens(
     shard_idx = 0
     total_tokens = 0
     shard_paths: list[str] = []
+    token_dtype = np.uint16 if tokenizer.vocab_size <= 65535 else np.uint32
 
     if show_progress and Progress is None:
         print("Progress disabled: install 'rich' to enable live stats.")
@@ -128,7 +129,7 @@ def pack_tokens(
         nonlocal shard, shard_idx
         if not shard:
             return
-        arr = np.array(shard, dtype=np.uint32)
+        arr = np.array(shard, dtype=token_dtype)
         shard_path = out_dir / f"shard_{shard_idx:05d}.bin"
         arr.tofile(shard_path)
         shard_paths.append(str(shard_path.name))
@@ -187,6 +188,7 @@ def pack_tokens(
         "shards": shard_paths,
         "workers": workers,
         "chunk_size": chunk_size,
+        "dtype": np.dtype(token_dtype).name,
         "tokenizer_fingerprint": tokenizer.fingerprint,
     }
     (out_dir / "metadata.json").write_text(json.dumps(metadata, indent=2))

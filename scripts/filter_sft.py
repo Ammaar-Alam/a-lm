@@ -17,12 +17,16 @@ from typing import Any
 DEFAULT_REFUSAL_PATTERNS = [
     r"\bas an ai language model\b",
     r"\bi'?m an ai language model\b",
+    r"\bi'?m sorry[, ]+(?:but|i)\b",
     r"\bi (?:do not|don't) have access\b",
     r"\bi (?:do not|don't) have (?:the )?(?:ability|capability|capacity)\b",
     r"\bi am not capable\b",
     r"\bi (?:cannot|can't) (?:access|browse)\b",
     r"\bi am not able to\b",
     r"\bi do not have the ability to\b",
+    r"\bthat (?:request|content) (?:violates|goes against)\b",
+    r"\bgoes against (?:policy|policies|guidelines)\b",
+    r"\bi (?:cannot|can't) help with that\b",
 ]
 
 
@@ -68,6 +72,41 @@ def parse_args() -> argparse.Namespace:
         help="Minimum assistant turn length to keep (default: 8).",
     )
     parser.add_argument(
+        "--min-alpha-ratio",
+        type=float,
+        default=0.35,
+        help=(
+            "Minimum alphabetic-character ratio for assistant turns (default: 0.35). "
+            "Useful for dropping empty enumerations like '1.\\n2.\\n3.'"
+        ),
+    )
+    parser.add_argument(
+        "--min-assistant-words",
+        type=int,
+        default=3,
+        help="Minimum assistant word count per turn (default: 3).",
+    )
+    parser.add_argument(
+        "--max-user-chars",
+        type=int,
+        default=0,
+        help="Drop conversations with any user turn longer than this (0 disables).",
+    )
+    parser.add_argument(
+        "--max-assistant-chars",
+        type=int,
+        default=0,
+        help="Drop conversations with any assistant turn longer than this (0 disables).",
+    )
+    parser.add_argument(
+        "--max-user-assistant-word-ratio",
+        type=float,
+        default=0.0,
+        help=(
+            "Drop conversation if user_words / assistant_words exceeds this ratio (<=0 disables)."
+        ),
+    )
+    parser.add_argument(
         "--drop-repetition",
         action="store_true",
         help="Drop assistant turns that are highly repetitive (ngram heuristic).",
@@ -95,6 +134,24 @@ def parse_args() -> argparse.Namespace:
 
 def _matches_any(text: str, patterns: list[re.Pattern[str]]) -> bool:
     return any(pat.search(text) for pat in patterns)
+
+
+def _alpha_ratio(text: str) -> float:
+    non_ws = 0
+    alpha = 0
+    for ch in text:
+        if ch.isspace():
+            continue
+        non_ws += 1
+        if ch.isalpha():
+            alpha += 1
+    if non_ws <= 0:
+        return 0.0
+    return alpha / non_ws
+
+
+def _word_count(text: str) -> int:
+    return len(re.findall(r"\w+", text))
 
 
 def _unique_ngram_ratio(text: str, n: int) -> float:
@@ -127,6 +184,10 @@ def main() -> None:
     dropped_short = 0
     dropped_turns = 0
     dropped_repetition = 0
+    dropped_alpha = 0
+    dropped_words = 0
+    dropped_length = 0
+    dropped_balance = 0
 
     with out_path.open("w", encoding="utf-8") as handle:
         for _, convo in _iter_jsonl(in_path):
@@ -138,12 +199,17 @@ def main() -> None:
                 continue
 
             assistant_turns: list[str] = []
+            user_turns: list[str] = []
             for turn in turns:
                 if not isinstance(turn, dict):
                     continue
-                if str(turn.get("role", "")).lower() != "assistant":
-                    continue
+                role = str(turn.get("role", "")).lower()
                 text = str(turn.get("text", ""))
+                if role == "user":
+                    user_turns.append(text)
+                    continue
+                if role != "assistant":
+                    continue
                 assistant_turns.append(text)
 
             if not assistant_turns:
@@ -154,6 +220,43 @@ def main() -> None:
             if any(len(t.strip()) < args.min_assistant_chars for t in assistant_turns):
                 dropped += 1
                 dropped_short += 1
+                continue
+
+            if args.min_assistant_words > 0 and any(
+                _word_count(t) < args.min_assistant_words for t in assistant_turns
+            ):
+                dropped += 1
+                dropped_words += 1
+                continue
+
+            if args.max_user_chars > 0 and any(
+                len(t.strip()) > args.max_user_chars for t in user_turns
+            ):
+                dropped += 1
+                dropped_length += 1
+                continue
+
+            if args.max_assistant_chars > 0 and any(
+                len(t.strip()) > args.max_assistant_chars for t in assistant_turns
+            ):
+                dropped += 1
+                dropped_length += 1
+                continue
+
+            if args.max_user_assistant_word_ratio > 0:
+                user_words = sum(_word_count(t) for t in user_turns)
+                assistant_words = max(1, sum(_word_count(t) for t in assistant_turns))
+                if (user_words / assistant_words) > args.max_user_assistant_word_ratio:
+                    dropped += 1
+                    dropped_balance += 1
+                    continue
+
+            min_alpha_ratio = float(args.min_alpha_ratio)
+            if min_alpha_ratio > 0.0 and any(
+                _alpha_ratio(t) < min_alpha_ratio for t in assistant_turns
+            ):
+                dropped += 1
+                dropped_alpha += 1
                 continue
 
             if args.drop_repetition:
@@ -190,6 +293,10 @@ def main() -> None:
                 "dropped_short": dropped_short,
                 "dropped_turns": dropped_turns,
                 "dropped_repetition": dropped_repetition,
+                "dropped_alpha": dropped_alpha,
+                "dropped_words": dropped_words,
+                "dropped_length": dropped_length,
+                "dropped_balance": dropped_balance,
                 "patterns": patterns,
             },
             indent=2,

@@ -1,46 +1,59 @@
-# data sources used in Phase 3 scripts; values match public datasets with permissive licenses
+# Main corpus profile for CUDA training.
+# sample_tokens are approximate word counts.
 sources:
   fineweb_edu:
     kind: huggingface
     dataset: HuggingFaceFW/fineweb-edu
     split: train
     streaming: true
-    sample_tokens: 100000
-    notes: "Educational slice of FineWeb; high quality web text."
+    sample_tokens: 140000000
+    notes: "High-quality web text."
+
+  openwebtext2:
+    kind: huggingface
+    dataset: Geralt-Targaryen/openwebtext2
+    split: train
+    streaming: true
+    sample_tokens: 120000000
+    notes: "General web text."
+
   wikipedia_en:
     kind: huggingface
     dataset: wikimedia/wikipedia
     config: 20231101.en
     split: train
     streaming: true
-    sample_articles: 50000
-    notes: "Dump curated via HF; filter to remove tables/code in prepare_corpus.py."
+    sample_tokens: 100000000
+    notes: "Factual reference text."
+
+  pippa_cleaned:
+    kind: huggingface
+    dataset: royallab/PIPPA-cleaned
+    split: train
+    streaming: true
+    adapter: pippa
+    filter_underage: true
+    sample_tokens: 260000000
+    notes: "Dialogue/mature style corpus."
+
+  rp_opus:
+    kind: huggingface
+    dataset: taozi555/rp-opus
+    split: train
+    streaming: true
+    data_files: messages_remaining.jsonl
+    adapter: rp_opus
+    filter_underage: true
+    sample_tokens: 260000000
+    notes: "Roleplay/dialog corpus (gated)."
+
   tinystories:
     kind: huggingface
     dataset: roneneldan/TinyStories
     split: train
-    streaming: false
-    notes: "TinyStories pairs used for early convergence sanity checks."
-
-sft:
-  ultrachat:
-    kind: huggingface
-    dataset: HuggingFaceH4/ultrachat_200k
-    split: train
-    streaming: false
-    notes: "Apply filtering script to drop low quality turns."
-  oasst1:
-    kind: huggingface
-    dataset: OpenAssistant/oasst1
-    split: train
-    streaming: false
-    notes: "Use official conversation tree; flatten via scripts."
-
-prefs:
-  manual_pairs:
-    kind: local
-    path: data/prefs/paired.jsonl
-    notes: "Engineer in-house preference pairs for DPO."
+    streaming: true
+    sample_tokens: 10000000
+    notes: "Small regularizer for short coherent generations."
 
 cache:
   base_dir: "${AML_DATA_DIR:-data/cache}"

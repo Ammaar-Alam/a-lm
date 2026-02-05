@@ -30,6 +30,10 @@ class PackedDataset(Dataset[torch.Tensor]):
         metadata = json.loads(metadata_path.read_text())
         self.seq_len = int(metadata["seq_len"])
         self.tokenizer_fingerprint = metadata.get("tokenizer_fingerprint")
+        dtype_name = str(metadata.get("dtype", "uint32")).lower()
+        if dtype_name not in {"uint16", "uint32"}:
+            raise ValueError(f"Unsupported token dtype {dtype_name}")
+        self._token_dtype = np.uint16 if dtype_name == "uint16" else np.uint32
         shard_names = metadata.get("shards", [])
         if not shard_names:
             raise ValueError("No shards listed in metadata.json")
@@ -38,7 +42,7 @@ class PackedDataset(Dataset[torch.Tensor]):
         self.offsets: list[tuple[int, int]] = []
         self._cache: OrderedDict[int, np.memmap] = OrderedDict()
         self._max_cached_shards = 32
-        itemsize = np.dtype(np.uint32).itemsize
+        itemsize = np.dtype(self._token_dtype).itemsize
 
         offset = 0
         for _shard_idx, name in enumerate(shard_names):
@@ -77,7 +81,7 @@ class PackedDataset(Dataset[torch.Tensor]):
             self._cache.move_to_end(shard_index)
             return cached
 
-        raw = np.memmap(info.path, dtype=np.uint32, mode="r")
+        raw = np.memmap(info.path, dtype=self._token_dtype, mode="r")
         sequences = len(raw) // self.seq_len
         arr = raw[: sequences * self.seq_len].reshape(sequences, self.seq_len)
         self._cache[shard_index] = arr

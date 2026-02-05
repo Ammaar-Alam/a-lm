@@ -183,7 +183,7 @@ make dev
 make fresh-pretrain
 make chat RUN=20260127-120000
 ```
-`make fresh-pretrain` defaults to `configs/corpus.yaml` and `configs/train.yaml`.
+`make fresh-pretrain` defaults to `configs/corpus_ec2.yaml` and `configs/train.yaml`.
 To start with a larger model, set `MODEL_CFG`:
 ```bash
 make fresh-pretrain MODEL_CFG=configs/nano.yaml
@@ -244,7 +244,7 @@ When you scale to longer runs, update `training.max_steps`, `scheduler.max_steps
 ---
 
 ## Supervised Fine-Tuning
-1. Prepare instruction/chat conversations (defaults: OpenAssistant OASST1, Ultrachat, Dolly):
+1. Prepare instruction/chat conversations (defaults: UltraChat + OpenAssistant):
    ```bash
    python scripts/prepare_sft.py --out data/sft/clean.jsonl
    ```
@@ -252,7 +252,15 @@ When you scale to longer runs, update `training.max_steps`, `scheduler.max_steps
    - These public chat datasets often contain lots of low-signal refusals (e.g. "As an AI language model...").
      For small models, it can help to filter these out before packing:
      ```bash
-     python scripts/filter_sft.py --in data/sft/clean.jsonl --out data/sft/clean.filtered.jsonl --drop-refusals
+     python scripts/filter_sft.py \
+       --in data/sft/clean.jsonl \
+       --out data/sft/clean.filtered.jsonl \
+       --drop-refusals \
+       --drop-repetition \
+       --min-alpha-ratio 0.35 \
+       --min-assistant-words 3 \
+       --max-user-assistant-word-ratio 12 \
+       --drop-assistant-regex "\\bhowever, i can provide\\b"
      ```
 2. Pack the conversations into token + loss-mask shards:
    ```bash
@@ -264,6 +272,8 @@ When you scale to longer runs, update `training.max_steps`, `scheduler.max_steps
      --shard-size 1000000 \
      --workers 6 \
      --chunk-size 64 \
+     --min-mask-frac 0.05 \
+     --max-mask-frac 0.75 \
      --system-prompt "You are a helpful assistant." \
      --eot-token "<|eot|>"
    ```
