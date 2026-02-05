@@ -36,16 +36,25 @@ sources:
     sample_tokens: 320000000
     notes: "Dialogue/mature style corpus."
 
-  rp_opus:
+  # rp_opus:
+  #   kind: huggingface
+  #   dataset: taozi555/rp-opus
+  #   split: train
+  #   streaming: true
+  #   data_files: messages_remaining.jsonl
+  #   adapter: rp_opus
+  #   filter_underage: true
+  #   sample_tokens: 320000000
+  #   notes: "Roleplay/dialog corpus (gated)."
+
+  bluemoon_rp:
     kind: huggingface
-    dataset: taozi555/rp-opus
+    dataset: Squish42/bluemoon-fandom-1-1-rp-cleaned
     split: train
     streaming: true
-    data_files: messages_remaining.jsonl
-    adapter: rp_opus
     filter_underage: true
     sample_tokens: 320000000
-    notes: "Roleplay/dialog corpus (gated)."
+    notes: "Roleplay/dialog corpus."
 
   tinystories:
     kind: huggingface
