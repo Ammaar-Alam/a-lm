@@ -63,9 +63,13 @@ Pretraining teaches the model general language modeling, but not chat behavior. 
 
 ```bash
 !python3 scripts/prepare_sft.py --out data/sft/20260127-161044/clean.jsonl
+!python3 scripts/filter_sft.py \
+  --in data/sft/20260127-161044/clean.jsonl \
+  --out data/sft/20260127-161044/clean.filtered.jsonl \
+  --drop-refusals
 !python3 scripts/pack_sft.py \
   --tokenizer artifacts/20260127-161044/tokenizer.json \
-  --jsonl data/sft/20260127-161044/clean.jsonl \
+  --jsonl data/sft/20260127-161044/clean.filtered.jsonl \
   --out data/sft_packed/20260127-161044 \
   --seq-len 2048 \
   --shard-size 1000000 \

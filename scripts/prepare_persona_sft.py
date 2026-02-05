@@ -181,12 +181,21 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate a small persona SFT JSONL")
     parser.add_argument("--out", default="data/sft/persona.jsonl", help="Output JSONL path")
     parser.add_argument("--system", default=DEFAULT_SYSTEM, help="System prompt to embed")
+    parser.add_argument(
+        "--repeat",
+        type=int,
+        default=1,
+        help="Repeat the persona set N times (useful for upsampling in mixes).",
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    write_jsonl(Path(args.out), build_conversations(args.system))
+    repeats = max(1, int(args.repeat))
+    conversations = build_conversations(args.system)
+    records = conversations * repeats
+    write_jsonl(Path(args.out), records)
     print(f"Wrote persona SFT to {args.out}")
 
 

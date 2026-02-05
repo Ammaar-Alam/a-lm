@@ -11,20 +11,19 @@ scheduler:
   max_steps: 40000
 
 training:
-  micro_batch_size: 1
-  gradient_accumulation: 16
+  micro_batch_size: 4
+  gradient_accumulation: 4
   global_batch_size: 16
   seq_len: 2048
   label_smoothing: 0.0
-  checkpoint_interval: 250
+  checkpoint_interval: 1000
   gradient_clip_norm: 0.5
-  mixed_precision: fp16
-  dataloader_workers: 1
-  prefetch_factor: 2
+  mixed_precision: bf16
+  dataloader_workers: 4
+  prefetch_factor: 4
   max_steps: 40000
   seed: 1337
 
 logging:
-  log_interval: 20
+  log_interval: 50
   rich_progress: true
-

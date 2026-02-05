@@ -410,18 +410,18 @@ def collate_batch(
     return tokens, mask
 
 
-def create_scaler(device: torch.device) -> torch.amp.GradScaler | None:
+def create_scaler(device: torch.device, *, enabled: bool) -> torch.amp.GradScaler | None:
     try:
         return torch.amp.GradScaler(
             device.type,
-            enabled=device.type in {"cuda", "mps"},
+            enabled=enabled,
             init_scale=2.0**10,
             growth_factor=2.0,
             backoff_factor=0.5,
             growth_interval=200,
         )
     except TypeError:  # pragma: no cover - fallback for older torch signature
-        return torch.amp.GradScaler(device.type, enabled=device.type in {"cuda", "mps"})
+        return torch.amp.GradScaler(device.type, enabled=enabled)
     except AttributeError:  # pragma: no cover - very old torch without amp
         return None
 
@@ -443,6 +443,27 @@ def train(args: argparse.Namespace) -> None:
     max_steps = int(training_cfg.get("max_steps", 2000))
     grad_clip = float(training_cfg.get("gradient_clip_norm", 1.0))
     num_workers = int(training_cfg.get("dataloader_workers", 0))
+    mixed_precision = str(training_cfg.get("mixed_precision", "fp16")).strip().lower()
+
+    amp_dtype: torch.dtype | None
+    scaler_enabled = False
+    if mixed_precision in {"fp16", "float16"}:
+        amp_dtype = torch.float16
+        scaler_enabled = device.type in {"cuda", "mps"}
+    elif mixed_precision in {"bf16", "bfloat16"}:
+        amp_dtype = torch.bfloat16
+        scaler_enabled = False
+        if device.type != "cuda":
+            print(f"[warn] mixed_precision={mixed_precision} requested; falling back to fp16.")
+            amp_dtype = torch.float16
+            scaler_enabled = device.type in {"cuda", "mps"}
+    elif mixed_precision in {"fp32", "float32", "none", "off"}:
+        amp_dtype = None
+        scaler_enabled = False
+    else:
+        print(f"[warn] unknown mixed_precision={mixed_precision!r}; using fp16.")
+        amp_dtype = torch.float16
+        scaler_enabled = device.type in {"cuda", "mps"}
 
     dataset_fingerprint = dataset.tokenizer_fingerprint
     if dataset.tokenizer_fingerprint:
@@ -484,22 +505,28 @@ def train(args: argparse.Namespace) -> None:
     optimizer = build_optimizer(model, optim_cfg, device=device)
     scheduler = build_scheduler(optimizer, scheduler_cfg, max_steps)
 
-    scaler = create_scaler(device)
+    scaler = create_scaler(device, enabled=scaler_enabled)
     if device.type == "mps" and os.getenv("PYTORCH_MPS_FAST_MATH"):
         print("[warn] PYTORCH_MPS_FAST_MATH=1 detected; unset it for SFT stability on MPS.")
-    print(f"[amp] device={device.type} scaler_enabled={bool(scaler and scaler.is_enabled())}")
+    dtype_name = "fp32" if amp_dtype is None else str(amp_dtype).replace("torch.", "")
+    print(
+        f"[amp] device={device.type} dtype={dtype_name} "
+        f"scaler_enabled={bool(scaler and scaler.is_enabled())}"
+    )
 
     def _autocast_ctx() -> Any:
+        if amp_dtype is None:
+            return nullcontext()
         amp = getattr(torch, "amp", None)
         if amp is not None and hasattr(amp, "autocast"):
             if device.type in {"cuda", "mps"}:
-                return amp.autocast(device_type=device.type, dtype=torch.float16)
+                return amp.autocast(device_type=device.type, dtype=amp_dtype)
             return nullcontext()
 
         if device.type == "cuda":
-            return torch.cuda.amp.autocast(dtype=torch.float16)
+            return torch.cuda.amp.autocast(dtype=amp_dtype)
         if device.type == "mps" and hasattr(torch, "autocast"):
-            return torch.autocast(device_type="mps", dtype=torch.float16)
+            return torch.autocast(device_type="mps", dtype=amp_dtype)
         return nullcontext()
 
     autocast_ctx = _autocast_ctx()

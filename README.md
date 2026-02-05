@@ -80,7 +80,7 @@ If dataset prep crashes with a `PyGILState_Release` error on Colab, upgrade the 
 | `make test` / `pytest` | Run the test suite. |
 | `ruff format .` | Apply code formatting. |
 | `make check-mps` | Print which device (MPS/CUDA/CPU) PyTorch sees. |
-| `make fresh-pretrain` | Fresh corpus → tokenizer → shards → pretrain run (timestamped, M2-friendly defaults). |
+| `make fresh-pretrain` | Fresh corpus → tokenizer → shards → pretrain run (timestamped defaults). |
 | `make chat RUN=20260127-120000` | Chat with a run checkpoint (defaults to pretrain `ckpt-last.pt`). |
 | `make rlvr-data` | Generate verifiable math prompts for RLVR. |
 | `make rlvr-train RUN=20260127-120000` | Run RLVR from a pretrain checkpoint (math verifier). |
@@ -91,7 +91,7 @@ If dataset prep crashes with a `PyGILState_Release` error on Colab, upgrade the 
 
 ## Dataset Preparation
 1. Ensure Hugging Face login is active (`huggingface-cli login`).
-2. Inspect `configs/corpus_m2.yaml` (default for `make fresh-pretrain`) and `configs/corpus.yaml` (bigger run). They reference:
+2. Inspect `configs/corpus.yaml` (default) and `configs/corpus_ec2.yaml` (bigger EC2 run). They reference:
    - FineWeb-Edu (quality web text slice)
    - Wikipedia snapshot (English)
    - TinyStories (tiny synthetic stories)
@@ -99,7 +99,7 @@ If dataset prep crashes with a `PyGILState_Release` error on Colab, upgrade the 
 3. Run the prep script to clean and normalize all active sources:
    ```bash
    python scripts/prepare_corpus.py \
-     --src configs/corpus_m2.yaml \
+     --src configs/corpus.yaml \
      --out data/clean
    ```
    - Output: `data/clean/*.txt` plus metadata JSON for each source.
@@ -183,10 +183,7 @@ make dev
 make fresh-pretrain
 make chat RUN=20260127-120000
 ```
-`make fresh-pretrain` defaults to `configs/corpus_m2.yaml` and `configs/train_m2.yaml`. To use the larger defaults instead:
-```bash
-make fresh-pretrain CORPUS_CFG=configs/corpus.yaml TRAIN_CFG=configs/train.yaml
-```
+`make fresh-pretrain` defaults to `configs/corpus.yaml` and `configs/train.yaml`.
 To start with a larger model, set `MODEL_CFG`:
 ```bash
 make fresh-pretrain MODEL_CFG=configs/nano.yaml
@@ -252,11 +249,16 @@ When you scale to longer runs, update `training.max_steps`, `scheduler.max_steps
    python scripts/prepare_sft.py --out data/sft/clean.jsonl
    ```
    - Use `--include` or `--max-per-source` to curate the mix without editing the script.
+   - These public chat datasets often contain lots of low-signal refusals (e.g. "As an AI language model...").
+     For small models, it can help to filter these out before packing:
+     ```bash
+     python scripts/filter_sft.py --in data/sft/clean.jsonl --out data/sft/clean.filtered.jsonl --drop-refusals
+     ```
 2. Pack the conversations into token + loss-mask shards:
    ```bash
    python scripts/pack_sft.py \
      --tokenizer artifacts/tokenizer.json \
-     --jsonl data/sft/clean.jsonl \
+     --jsonl data/sft/clean.filtered.jsonl \
      --out data/sft_packed \
      --seq-len 2048 \
      --shard-size 1000000 \

@@ -1,7 +1,7 @@
 PYTHON ?= python3
 PIP ?= $(PYTHON) -m pip
 
-.PHONY: dev install lint format test clean check-mps train-pico fresh-pretrain colab-pretrain chat rlvr-data rlvr-train sft-prepare sft-pack sft-train eval-chat inspect-sft
+.PHONY: dev install lint format test clean check-mps train-pico fresh-pretrain colab-pretrain chat rlvr-data rlvr-train sft-prepare sft-filter sft-pack sft-train eval-chat inspect-sft
 
 export PYTHONPATH := $(CURDIR)/src:$(PYTHONPATH)
 
@@ -13,9 +13,9 @@ endif
 RUN ?= $(shell date +%Y%m%d-%H%M%S)
 RUN := $(RUN)
 
-CORPUS_CFG ?= configs/corpus_m2.yaml
+CORPUS_CFG ?= configs/corpus.yaml
 MODEL_CFG ?= configs/pico.yaml
-TRAIN_CFG ?= configs/train_m2.yaml
+TRAIN_CFG ?= configs/train.yaml
 
 SEQ_LEN ?= 512
 SHARD_SIZE ?= 1000000
@@ -40,6 +40,7 @@ TOKENIZER ?= artifacts/$(RUN)/tokenizer.json
 
 SFT_SYSTEM ?= You are a helpful assistant.
 SFT_JSONL ?= data/sft/$(RUN)/clean.jsonl
+SFT_FILTERED_JSONL ?= data/sft/$(RUN)/clean.filtered.jsonl
 SFT_PACKED_DIR ?= data/sft_packed/$(RUN)
 SFT_SEQ_LEN ?= 2048
 SFT_TRAIN_CFG ?= configs/sft_2048.yaml
@@ -139,12 +140,18 @@ rlvr-train:
 		--device auto
 
 sft-prepare:
-	python scripts/prepare_sft.py --out $(SFT_JSONL)
+	$(PYTHON) scripts/prepare_sft.py --out $(SFT_JSONL)
+
+sft-filter:
+	$(PYTHON) scripts/filter_sft.py \
+		--in $(SFT_JSONL) \
+		--out $(SFT_FILTERED_JSONL) \
+		--drop-refusals
 
 sft-pack:
-	python scripts/pack_sft.py \
+	$(PYTHON) scripts/pack_sft.py \
 		--tokenizer $(TOKENIZER) \
-		--jsonl $(SFT_JSONL) \
+		--jsonl $(SFT_FILTERED_JSONL) \
 		--out $(SFT_PACKED_DIR) \
 		--seq-len $(SFT_SEQ_LEN) \
 		--shard-size 1000000 \
@@ -155,7 +162,7 @@ sft-pack:
 
 sft-train:
 	unset PYTORCH_MPS_FAST_MATH || true; \
-	python scripts/train_sft.py \
+	$(PYTHON) scripts/train_sft.py \
 		--model $(MODEL_CFG) \
 		--train $(SFT_TRAIN_CFG) \
 		--data $(SFT_PACKED_DIR) \
@@ -165,7 +172,7 @@ sft-train:
 		--tokenizer $(TOKENIZER)
 
 eval-chat:
-	python scripts/eval_chat.py \
+	$(PYTHON) scripts/eval_chat.py \
 		--checkpoint $(SFT_OUT)/ckpt-last.pt \
 		--tokenizer $(TOKENIZER) \
 		--device auto \
@@ -175,7 +182,7 @@ eval-chat:
 		--max-response 128
 
 inspect-sft:
-	python scripts/inspect_sft_pack.py --data $(SFT_PACKED_DIR) --tokenizer $(TOKENIZER) --num 3
+	$(PYTHON) scripts/inspect_sft_pack.py --data $(SFT_PACKED_DIR) --tokenizer $(TOKENIZER) --num 3
 
 clean:
 	rm -rf __pycache__ src/**/__pycache__ tests/__pycache__ .pytest_cache .mypy_cache .ruff_cache htmlcov .coverage
