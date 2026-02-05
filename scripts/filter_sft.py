@@ -16,7 +16,10 @@ from typing import Any
 
 DEFAULT_REFUSAL_PATTERNS = [
     r"\bas an ai language model\b",
+    r"\bi'?m an ai language model\b",
     r"\bi (?:do not|don't) have access\b",
+    r"\bi (?:do not|don't) have (?:the )?(?:ability|capability|capacity)\b",
+    r"\bi am not capable\b",
     r"\bi (?:cannot|can't) (?:access|browse)\b",
     r"\bi am not able to\b",
     r"\bi do not have the ability to\b",
@@ -64,11 +67,46 @@ def parse_args() -> argparse.Namespace:
         default=8,
         help="Minimum assistant turn length to keep (default: 8).",
     )
+    parser.add_argument(
+        "--drop-repetition",
+        action="store_true",
+        help="Drop assistant turns that are highly repetitive (ngram heuristic).",
+    )
+    parser.add_argument(
+        "--repetition-ngram",
+        type=int,
+        default=4,
+        help="N-gram size for repetition heuristic (default: 4).",
+    )
+    parser.add_argument(
+        "--min-unique-ngram-ratio",
+        type=float,
+        default=0.35,
+        help="Minimum unique n-gram ratio to keep (default: 0.35).",
+    )
+    parser.add_argument(
+        "--min-repetition-tokens",
+        type=int,
+        default=64,
+        help="Minimum tokens before applying repetition heuristic (default: 64).",
+    )
     return parser.parse_args()
 
 
 def _matches_any(text: str, patterns: list[re.Pattern[str]]) -> bool:
     return any(pat.search(text) for pat in patterns)
+
+
+def _unique_ngram_ratio(text: str, n: int) -> float:
+    """Compute unique/total n-gram ratio over word tokens (lower = more repetitive)."""
+    if n <= 0:
+        return 1.0
+    tokens = re.findall(r"\w+", text.lower())
+    total = len(tokens) - n + 1
+    if total <= 0:
+        return 1.0
+    ngrams = {tuple(tokens[i : i + n]) for i in range(total)}
+    return len(ngrams) / total
 
 
 def main() -> None:
@@ -88,6 +126,7 @@ def main() -> None:
     dropped_refusal = 0
     dropped_short = 0
     dropped_turns = 0
+    dropped_repetition = 0
 
     with out_path.open("w", encoding="utf-8") as handle:
         for _, convo in _iter_jsonl(in_path):
@@ -117,6 +156,20 @@ def main() -> None:
                 dropped_short += 1
                 continue
 
+            if args.drop_repetition:
+                n = max(1, int(args.repetition_ngram))
+                threshold = float(args.min_unique_ngram_ratio)
+                min_tokens = max(0, int(args.min_repetition_tokens))
+                is_repetitive = any(
+                    len(re.findall(r"\w+", t)) >= min_tokens
+                    and _unique_ngram_ratio(t, n) < threshold
+                    for t in assistant_turns
+                )
+                if is_repetitive:
+                    dropped += 1
+                    dropped_repetition += 1
+                    continue
+
             if compiled and any(_matches_any(t, compiled) for t in assistant_turns):
                 dropped += 1
                 dropped_refusal += 1
@@ -136,6 +189,7 @@ def main() -> None:
                 "dropped_refusal": dropped_refusal,
                 "dropped_short": dropped_short,
                 "dropped_turns": dropped_turns,
+                "dropped_repetition": dropped_repetition,
                 "patterns": patterns,
             },
             indent=2,
